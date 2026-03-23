@@ -6,6 +6,7 @@ export type NullableTribeId = TribeId | null;
 export type Tribe = {
   id: TribeId;
   name: string;
+  color: string;
   currentScore: number;
 };
 
@@ -33,12 +34,18 @@ export type ScenarioProjectionRow = {
   tribeId: TribeId;
   tribeName: string;
   currentScore: number;
+  pendingFirstCapture: number;
+  pointsPerMinute: number;
   addedProduction: number;
-  addedFutureFirstCapture: number;
   finalScore: number;
 };
 
 export type ScenarioProjectionResult = {
   minutesRemainingByDay: Record<DayNumber, number>;
   rows: ScenarioProjectionRow[];
+};
+
+export type ScenarioTimelinePoint = {
+  label: string;
+  scores: Record<TribeId, number>;
 };

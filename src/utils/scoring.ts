@@ -7,6 +7,7 @@ import type {
   DayNumber,
   ScenarioOwnerField,
   ScenarioProjectionResult,
+  ScenarioTimelinePoint,
   RuinState,
   Tribe,
 } from "../types";
@@ -88,6 +89,36 @@ export function getFirstCaptureTotals(
   return totals;
 }
 
+export function getPointsPerMinuteByOwner(
+  tribes: Tribe[],
+  ruinStates: RuinState[],
+  currentDay: DayNumber,
+  ownerField: ScenarioOwnerField
+): Map<string, number> {
+  const totals = new Map<string, number>();
+
+  for (const tribe of tribes) {
+    totals.set(tribe.id, 0);
+  }
+
+  for (const ruinState of ruinStates) {
+    const ruinDefinition = ruinDefinitionMap.get(ruinState.id);
+    if (!ruinDefinition) {
+      continue;
+    }
+
+    const owner = ruinState[ownerField];
+    if (!owner) {
+      continue;
+    }
+
+    const current = totals.get(owner) ?? 0;
+    totals.set(owner, current + RUIN_MINUTE_RATES[ruinDefinition.type][currentDay]);
+  }
+
+  return totals;
+}
+
 type ProjectScenarioInput = {
   tribes: Tribe[];
   ruinStates: RuinState[];
@@ -104,13 +135,18 @@ export function projectScenario({
   now = new Date(),
 }: ProjectScenarioInput): ScenarioProjectionResult {
   const minutesRemainingByDay = getMinutesRemainingByDay(currentDay, now);
+  const firstCaptureTotals = getFirstCaptureTotals(tribes, ruinStates);
+  const pointsPerMinuteTotals = getPointsPerMinuteByOwner(
+    tribes,
+    ruinStates,
+    currentDay,
+    ownerField
+  );
 
   const addedProductionByTribe = new Map<string, number>();
-  const addedFutureFirstCaptureByTribe = new Map<string, number>();
 
   for (const tribe of tribes) {
     addedProductionByTribe.set(tribe.id, 0);
-    addedFutureFirstCaptureByTribe.set(tribe.id, 0);
   }
 
   for (const ruinState of ruinStates) {
@@ -132,29 +168,21 @@ export function projectScenario({
 
     const currentProduction = addedProductionByTribe.get(owner) ?? 0;
     addedProductionByTribe.set(owner, currentProduction + futureProduction);
-
-    if (!ruinState.firstCaptureBy) {
-      const currentBonus = addedFutureFirstCaptureByTribe.get(owner) ?? 0;
-      addedFutureFirstCaptureByTribe.set(
-        owner,
-        currentBonus + RUIN_FIRST_CAPTURE_POINTS[ruinDefinition.type]
-      );
-    }
   }
 
   const rows = tribes.map((tribe) => {
     const addedProduction = addedProductionByTribe.get(tribe.id) ?? 0;
-    const addedFutureFirstCapture =
-      addedFutureFirstCaptureByTribe.get(tribe.id) ?? 0;
+    const pendingFirstCapture = firstCaptureTotals.get(tribe.id) ?? 0;
+    const pointsPerMinute = pointsPerMinuteTotals.get(tribe.id) ?? 0;
 
     return {
       tribeId: tribe.id,
       tribeName: tribe.name,
       currentScore: tribe.currentScore,
+      pendingFirstCapture,
+      pointsPerMinute,
       addedProduction,
-      addedFutureFirstCapture,
-      finalScore:
-        tribe.currentScore + addedProduction + addedFutureFirstCapture,
+      finalScore: tribe.currentScore + pendingFirstCapture + addedProduction,
     };
   });
 
@@ -162,4 +190,58 @@ export function projectScenario({
     minutesRemainingByDay,
     rows,
   };
+}
+
+export function buildScenarioTimeline({
+  tribes,
+  ruinStates,
+  currentDay,
+  ownerField,
+  now = new Date(),
+}: ProjectScenarioInput): ScenarioTimelinePoint[] {
+  const firstCaptureTotals = getFirstCaptureTotals(tribes, ruinStates);
+  const minutesRemainingByDay = getMinutesRemainingByDay(currentDay, now);
+
+  const runningScores = new Map<string, number>(
+    tribes.map((tribe) => [
+      tribe.id,
+      tribe.currentScore + (firstCaptureTotals.get(tribe.id) ?? 0),
+    ])
+  );
+
+  const timeline: ScenarioTimelinePoint[] = [
+    {
+      label: "Now",
+      scores: Object.fromEntries(runningScores) as Record<string, number>,
+    },
+  ];
+
+  for (let day = currentDay; day <= 3; day += 1) {
+    const typedDay = day as DayNumber;
+    const minutes = minutesRemainingByDay[typedDay];
+
+    if (minutes <= 0) {
+      continue;
+    }
+
+    const pointsPerMinute = getPointsPerMinuteByOwner(
+      tribes,
+      ruinStates,
+      typedDay,
+      ownerField
+    );
+
+    for (const tribe of tribes) {
+      const currentScore = runningScores.get(tribe.id) ?? 0;
+      const ppm = pointsPerMinute.get(tribe.id) ?? 0;
+      runningScores.set(tribe.id, currentScore + ppm * minutes);
+    }
+
+    timeline.push({
+      label: `End D${typedDay}`,
+      scores: Object.fromEntries(runningScores) as Record<string, number>,
+    });
+  }
+
+  return timeline;
 }

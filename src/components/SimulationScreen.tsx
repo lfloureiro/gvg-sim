@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { RUIN_DEFINITIONS } from "../constants";
 import {
-  getFirstCaptureTotals,
+  buildScenarioTimeline,
   projectScenario,
 } from "../utils/scoring";
 import type {
@@ -9,7 +9,13 @@ import type {
   RuinState,
   RuinStateField,
   Tribe,
+  ScenarioTimelinePoint,
 } from "../types";
+import {
+  APP_VERSION_LABEL,
+  PHOENIX_MOTTO,
+  PHOENIX_TITLE,
+} from "../version";
 import RuinTable from "./RuinTable";
 
 type SimulationScreenProps = {
@@ -45,6 +51,197 @@ function isPhoenixVeritas(name: string): boolean {
   return name.trim().toLowerCase() === "phoenix veritas";
 }
 
+function ScoreEvolutionChart({
+  tribes,
+  timeline,
+}: {
+  tribes: Tribe[];
+  timeline: ScenarioTimelinePoint[];
+}) {
+  const width = 920;
+  const height = 360;
+  const left = 72;
+  const right = 28;
+  const top = 24;
+  const bottom = 48;
+
+  const allValues = timeline.flatMap((point) =>
+    tribes.map((tribe) => point.scores[tribe.id] ?? 0)
+  );
+
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const span = Math.max(1, rawMax - rawMin);
+  const minValue = Math.max(0, rawMin - span * 0.08);
+  const maxValue = rawMax + span * 0.08;
+
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  function getX(index: number): number {
+    if (timeline.length <= 1) {
+      return left;
+    }
+
+    return left + (index * plotWidth) / (timeline.length - 1);
+  }
+
+  function getY(value: number): number {
+    if (maxValue === minValue) {
+      return top + plotHeight / 2;
+    }
+
+    return top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+  }
+
+  function buildPath(tribeId: string): string {
+    return timeline
+      .map((point, index) => {
+        const x = getX(index);
+        const y = getY(point.scores[tribeId] ?? 0);
+        return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+      })
+      .join(" ");
+  }
+
+  const horizontalGridValues = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    return maxValue - (maxValue - minValue) * ratio;
+  });
+
+  return (
+    <section className="card">
+      <div className="card-header">
+        <div>
+          <h2>Simulated score evolution</h2>
+          <p className="phoenix-subtitle">
+            Score growth from now until the end of Day 3, using the simulated
+            ownership.
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.9rem",
+          marginBottom: "1rem",
+        }}
+      >
+        {tribes.map((tribe) => (
+          <div
+            key={tribe.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.45rem",
+              fontSize: "0.95rem",
+            }}
+          >
+            <span
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: "999px",
+                backgroundColor: tribe.color,
+                display: "inline-block",
+              }}
+            />
+            <span>{tribe.name}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: "100%", minWidth: 760, display: "block" }}
+        >
+          {horizontalGridValues.map((value, index) => {
+            const y = getY(value);
+
+            return (
+              <g key={index}>
+                <line
+                  x1={left}
+                  y1={y}
+                  x2={width - right}
+                  y2={y}
+                  stroke="rgba(255,255,255,0.12)"
+                />
+                <text
+                  x={left - 10}
+                  y={y + 4}
+                  textAnchor="end"
+                  fontSize="12"
+                  fill="rgba(255,255,255,0.75)"
+                >
+                  {numberFormatter.format(Math.round(value))}
+                </text>
+              </g>
+            );
+          })}
+
+          <line
+            x1={left}
+            y1={top}
+            x2={left}
+            y2={height - bottom}
+            stroke="rgba(255,255,255,0.25)"
+          />
+          <line
+            x1={left}
+            y1={height - bottom}
+            x2={width - right}
+            y2={height - bottom}
+            stroke="rgba(255,255,255,0.25)"
+          />
+
+          {timeline.map((point, index) => {
+            const x = getX(index);
+
+            return (
+              <text
+                key={point.label}
+                x={x}
+                y={height - 18}
+                textAnchor="middle"
+                fontSize="12"
+                fill="rgba(255,255,255,0.75)"
+              >
+                {point.label}
+              </text>
+            );
+          })}
+
+          {tribes.map((tribe) => (
+            <g key={tribe.id}>
+              <path
+                d={buildPath(tribe.id)}
+                fill="none"
+                stroke={tribe.color}
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {timeline.map((point, index) => (
+                <circle
+                  key={`${tribe.id}-${point.label}`}
+                  cx={getX(index)}
+                  cy={getY(point.scores[tribe.id] ?? 0)}
+                  r={4}
+                  fill={tribe.color}
+                />
+              ))}
+            </g>
+          ))}
+        </svg>
+      </div>
+    </section>
+  );
+}
+
 export default function SimulationScreen({
   tribes,
   currentDay,
@@ -76,11 +273,6 @@ export default function SimulationScreen({
     []
   );
 
-  const firstCaptureTotals = useMemo(
-    () => getFirstCaptureTotals(tribes, ruinStates),
-    [tribes, ruinStates]
-  );
-
   const currentProjection = useMemo(
     () =>
       projectScenario({
@@ -96,6 +288,18 @@ export default function SimulationScreen({
   const simulatedProjection = useMemo(
     () =>
       projectScenario({
+        tribes,
+        ruinStates,
+        currentDay,
+        now: currentUtc,
+        ownerField: "simulatedOwner",
+      }),
+    [tribes, ruinStates, currentDay, currentUtc]
+  );
+
+  const simulatedTimeline = useMemo(
+    () =>
+      buildScenarioTimeline({
         tribes,
         ruinStates,
         currentDay,
@@ -133,13 +337,88 @@ export default function SimulationScreen({
   return (
     <div className="stack">
       <section className="card">
-        <div className="phoenix-banner phoenix-banner-compact">
-          <div className="phoenix-banner-inner">
-            <p className="phoenix-kicker">PHOENIX VERITAS</p>
+        <div
+          className="phoenix-banner phoenix-banner-compact"
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "stretch",
+            gap: "2rem",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            className="phoenix-banner-inner"
+            style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
+          >
+            <p className="phoenix-kicker">{PHOENIX_TITLE}</p>
             <h1 className="phoenix-title">GvG End of Day 3 Projection</h1>
             <p className="phoenix-subtitle">
               Current state versus simulated state if changes happen now.
             </p>
+
+            <div
+              style={{
+                marginTop: "0.7rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.65rem",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.78rem",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  opacity: 0.78,
+                }}
+              >
+                {APP_VERSION_LABEL}
+              </span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              top: "1.05rem",
+              right: "1.55rem",
+              zIndex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              textAlign: "right",
+              pointerEvents: "none",
+              opacity: 0.14,
+              lineHeight: 0.95,
+              maxWidth: "48%",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "clamp(2.4rem, 4.4vw, 4.8rem)",
+                fontWeight: 800,
+                letterSpacing: "0.08em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {PHOENIX_TITLE}
+            </div>
+
+            <div
+              style={{
+                marginTop: "0.45rem",
+                fontSize: "clamp(0.7rem, 1vw, 0.95rem)",
+                fontWeight: 600,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {PHOENIX_MOTTO}
+            </div>
           </div>
         </div>
 
@@ -192,11 +471,14 @@ export default function SimulationScreen({
         <div className="note-box">
           <strong>How to read the final table:</strong>
           <br />
-          First-capture points = total bonus from first captures already marked.
+          First-capture points = bonus selected in the first-capture column that
+          has not yet been added to the current points.
           <br />
-          Final if unchanged = current score + remaining points if nothing changes.
+          Points / min = points per minute each tribe is receiving from the
+          simulated ownership right now.
           <br />
-          Final simulated = current score + remaining points if the simulated state starts now.
+          Final simulated = current points + pending first-capture bonus +
+          future production until the end of Day 3.
         </div>
       </section>
 
@@ -236,8 +518,9 @@ export default function SimulationScreen({
             <thead>
               <tr>
                 <th>Tribe</th>
-                <th>First-capture points</th>
-                <th>Current score</th>
+                <th>Current points</th>
+                <th>First capture</th>
+                <th>Points / min</th>
                 <th>Final if unchanged</th>
                 <th>Final simulated</th>
                 <th>Difference</th>
@@ -245,14 +528,17 @@ export default function SimulationScreen({
             </thead>
             <tbody>
               {tribes.map((tribe) => {
-                const firstCaptureInitial =
-                  firstCaptureTotals.get(tribe.id) ?? 0;
+                const currentRow = currentProjectionMap[tribe.id];
+                const simulatedRow = simulatedProjectionMap[tribe.id];
+
+                const pendingFirstCapture =
+                  simulatedRow?.pendingFirstCapture ?? 0;
                 const currentFinal =
-                  currentProjectionMap[tribe.id]?.finalScore ??
-                  tribe.currentScore;
+                  currentRow?.finalScore ?? tribe.currentScore;
                 const simulatedFinal =
-                  simulatedProjectionMap[tribe.id]?.finalScore ??
-                  tribe.currentScore;
+                  simulatedRow?.finalScore ?? tribe.currentScore;
+                const pointsPerMinute =
+                  simulatedRow?.pointsPerMinute ?? 0;
                 const delta = simulatedFinal - currentFinal;
                 const featured = isPhoenixVeritas(tribe.name);
 
@@ -261,11 +547,26 @@ export default function SimulationScreen({
                     key={tribe.id}
                     className={featured ? "featured-table-row" : ""}
                   >
-                    <td className={`tribe-name-cell ${featured ? "featured-name" : ""}`}>
+                    <td
+                      className={`tribe-name-cell ${
+                        featured ? "featured-name" : ""
+                      }`}
+                    >
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 10,
+                          height: 10,
+                          borderRadius: "999px",
+                          backgroundColor: tribe.color,
+                          marginRight: 8,
+                        }}
+                      />
                       {tribe.name}
                     </td>
-                    <td>{numberFormatter.format(firstCaptureInitial)}</td>
                     <td>{numberFormatter.format(tribe.currentScore)}</td>
+                    <td>{numberFormatter.format(pendingFirstCapture)}</td>
+                    <td>{numberFormatter.format(pointsPerMinute)}</td>
                     <td>{numberFormatter.format(currentFinal)}</td>
                     <td className="total-cell">
                       {numberFormatter.format(simulatedFinal)}
@@ -288,6 +589,8 @@ export default function SimulationScreen({
           </table>
         </div>
       </section>
+
+      <ScoreEvolutionChart tribes={tribes} timeline={simulatedTimeline} />
     </div>
   );
 }

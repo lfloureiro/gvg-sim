@@ -10,11 +10,23 @@ import type {
   Tribe,
 } from "./types";
 
-const STORAGE_KEY = "gvg-sim-state-v2";
+const STORAGE_KEY = "gvg-sim-state-v3";
+
+const DEFAULT_TRIBE_COLORS = [
+  "#ff6b6b",
+  "#4dabf7",
+  "#51cf66",
+  "#ffd43b",
+  "#b197fc",
+  "#ffa94d",
+  "#f783ac",
+  "#63e6be",
+];
 
 type PersistedState = {
   configured: boolean;
   tribeNames: string[];
+  tribeColors: string[];
   currentScores: number[];
   currentDay: DayNumber;
   ruinStates: RuinState[];
@@ -23,9 +35,12 @@ type PersistedState = {
 function createDefaultState(): PersistedState {
   return {
     configured: false,
-    tribeNames: Array.from(
+    tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
+      index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
+    ),
+    tribeColors: Array.from(
       { length: TRIBE_COUNT },
-      (_, index) => `Tribo ${index + 1}`
+      (_, index) => DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length]
     ),
     currentScores: Array.from({ length: TRIBE_COUNT }, () => 0),
     currentDay: 1,
@@ -72,13 +87,22 @@ function loadInitialState(): PersistedState {
 
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
 
+    const loadedNames =
+      Array.isArray(parsed.tribeNames) &&
+      parsed.tribeNames.length === TRIBE_COUNT
+        ? parsed.tribeNames.map((value) => String(value || ""))
+        : defaults.tribeNames;
+
+    loadedNames[0] = "Phoenix Veritas";
+
     return {
       configured: Boolean(parsed.configured),
-      tribeNames:
-        Array.isArray(parsed.tribeNames) &&
-        parsed.tribeNames.length === TRIBE_COUNT
-          ? parsed.tribeNames
-          : defaults.tribeNames,
+      tribeNames: loadedNames,
+      tribeColors:
+        Array.isArray(parsed.tribeColors) &&
+        parsed.tribeColors.length === TRIBE_COUNT
+          ? parsed.tribeColors.map((value) => String(value || "#ffffff"))
+          : defaults.tribeColors,
       currentScores:
         Array.isArray(parsed.currentScores) &&
         parsed.currentScores.length === TRIBE_COUNT
@@ -118,13 +142,23 @@ export default function App() {
     () =>
       state.tribeNames.map((name, index) => ({
         id: `tribe-${index + 1}`,
-        name: name.trim() || `Tribo ${index + 1}`,
+        name:
+          index === 0
+            ? "Phoenix Veritas"
+            : name.trim() || `Tribo ${index + 1}`,
+        color:
+          state.tribeColors[index] ??
+          DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length],
         currentScore: state.currentScores[index] ?? 0,
       })),
-    [state.tribeNames, state.currentScores]
+    [state.tribeNames, state.tribeColors, state.currentScores]
   );
 
   function handleTribeNameChange(index: number, value: string) {
+    if (index === 0) {
+      return;
+    }
+
     setState((previous) => {
       const nextNames = [...previous.tribeNames];
       nextNames[index] = value;
@@ -132,6 +166,18 @@ export default function App() {
       return {
         ...previous,
         tribeNames: nextNames,
+      };
+    });
+  }
+
+  function handleTribeColorChange(index: number, value: string) {
+    setState((previous) => {
+      const nextColors = [...previous.tribeColors];
+      nextColors[index] = value;
+
+      return {
+        ...previous,
+        tribeColors: nextColors,
       };
     });
   }
@@ -184,18 +230,20 @@ export default function App() {
   }
 
   function handleContinue() {
-    const cleanedNames = state.tribeNames.map((name) => name.trim());
+    const cleanedNames = state.tribeNames.map((name, index) =>
+      index === 0 ? "Phoenix Veritas" : name.trim()
+    );
 
-  if (cleanedNames.some((name) => !name)) {
-    setSetupError("All tribes must have a name.");
-    return;
-  }
+    if (cleanedNames.some((name) => !name)) {
+      setSetupError("All tribes must have a name.");
+      return;
+    }
 
-  const lowered = cleanedNames.map((name) => name.toLocaleLowerCase());
-  if (new Set(lowered).size !== lowered.length) {
-    setSetupError("Tribe names must be unique.");
-    return;
-  }
+    const lowered = cleanedNames.map((name) => name.toLocaleLowerCase());
+    if (new Set(lowered).size !== lowered.length) {
+      setSetupError("Tribe names must be unique.");
+      return;
+    }
 
     setSetupError("");
 
@@ -222,9 +270,11 @@ export default function App() {
         {!state.configured ? (
           <SetupScreen
             tribeNames={state.tribeNames}
+            tribeColors={state.tribeColors}
             currentScores={state.currentScores}
             error={setupError}
             onTribeNameChange={handleTribeNameChange}
+            onTribeColorChange={handleTribeColorChange}
             onCurrentScoreChange={handleCurrentScoreChange}
             onContinue={handleContinue}
           />

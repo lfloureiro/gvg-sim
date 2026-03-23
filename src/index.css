@@ -117,22 +117,9 @@ h2 {
     #0b1220;
 }
 
-.phoenix-banner::after {
-  content: "PHOENIX VERITAS";
-  position: absolute;
-  right: 18px;
-  bottom: 10px;
-  font-size: clamp(1.6rem, 4vw, 3.2rem);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.06);
-  pointer-events: none;
-  white-space: nowrap;
-}
-
 .phoenix-banner-inner {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   padding: 20px 22px;
 }
 
@@ -190,7 +177,7 @@ h2 {
 
 .tribe-setup-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 220px;
+  grid-template-columns: minmax(240px, 1fr) 180px 180px;
   gap: 14px;
   padding: 10px;
   border-radius: 16px;
@@ -324,6 +311,12 @@ h2 {
   font-weight: 700;
 }
 
+@media (max-width: 1100px) {
+  .tribe-setup-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 14px;
@@ -339,12 +332,6 @@ h2 {
 
   .tribe-setup-row {
     grid-template-columns: 1fr;
-  }
-
-  .phoenix-banner::after {
-    font-size: 1.4rem;
-    right: 12px;
-    bottom: 12px;
   }
 
   h1 {
