@@ -6,12 +6,11 @@
 
 export const APP_VERSION = {
   major: 1,
-  minor: 1,
+  minor: 2,
   patch: 0,
 } as const;
 
 export const APP_VERSION_STRING = `${APP_VERSION.major}.${APP_VERSION.minor}.${APP_VERSION.patch}`;
-export const APP_VERSION_LABEL = `Version ${APP_VERSION_STRING}`;
 
 export const PHOENIX_TITLE = "PHOENIX VERITAS";
 export const PHOENIX_MOTTO = "Forged in fire, united in truth.";

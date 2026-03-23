@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { LANGUAGE_OPTIONS } from "../i18n";
+import type { AppText } from "../i18n";
 import { RUIN_DEFINITIONS } from "../constants";
 import {
   buildScenarioTimeline,
@@ -6,23 +8,27 @@ import {
 } from "../utils/scoring";
 import type {
   DayNumber,
+  Language,
   RuinState,
   RuinStateField,
   Tribe,
   ScenarioTimelinePoint,
 } from "../types";
 import {
-  APP_VERSION_LABEL,
+  APP_VERSION_STRING,
   PHOENIX_MOTTO,
   PHOENIX_TITLE,
 } from "../version";
 import RuinTable from "./RuinTable";
 
 type SimulationScreenProps = {
+  language: Language;
+  t: AppText;
   tribes: Tribe[];
   currentDay: DayNumber;
   currentUtc: Date;
   ruinStates: RuinState[];
+  onLanguageChange: (language: Language) => void;
   onCurrentDayChange: (day: DayNumber) => void;
   onRuinChange: (
     ruinId: string,
@@ -54,9 +60,11 @@ function isPhoenixVeritas(name: string): boolean {
 function ScoreEvolutionChart({
   tribes,
   timeline,
+  t,
 }: {
   tribes: Tribe[];
   timeline: ScenarioTimelinePoint[];
+  t: AppText;
 }) {
   const width = 920;
   const height = 360;
@@ -113,10 +121,9 @@ function ScoreEvolutionChart({
     <section className="card">
       <div className="card-header">
         <div>
-          <h2>Simulated score evolution</h2>
+          <h2>{t.simulation.simulatedScoreEvolution}</h2>
           <p className="phoenix-subtitle">
-            Score growth from now until the end of Day 3, using the simulated
-            ownership.
+            {t.simulation.simulatedScoreEvolutionSubtitle}
           </p>
         </div>
       </div>
@@ -243,10 +250,13 @@ function ScoreEvolutionChart({
 }
 
 export default function SimulationScreen({
+  language,
+  t,
   tribes,
   currentDay,
   currentUtc,
   ruinStates,
+  onLanguageChange,
   onCurrentDayChange,
   onRuinChange,
   onCopyCurrentToScenario,
@@ -353,30 +363,45 @@ export default function SimulationScreen({
             style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
           >
             <p className="phoenix-kicker">{PHOENIX_TITLE}</p>
-            <h1 className="phoenix-title">GvG End of Day 3 Projection</h1>
-            <p className="phoenix-subtitle">
-              Current state versus simulated state if changes happen now.
-            </p>
+            <h1 className="phoenix-title">{t.simulation.title}</h1>
+            <p className="phoenix-subtitle">{t.simulation.subtitle}</p>
 
             <div
               style={{
                 marginTop: "0.7rem",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.65rem",
+                display: "flex",
+                gap: "0.8rem",
                 flexWrap: "wrap",
+                alignItems: "end",
               }}
             >
-              <span
+              <label className="field" style={{ minWidth: 180 }}>
+                <span>{t.common.language}</span>
+                <select
+                  value={language}
+                  onChange={(event) =>
+                    onLanguageChange(event.target.value as Language)
+                  }
+                >
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div
                 style={{
                   fontSize: "0.78rem",
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   opacity: 0.78,
+                  paddingBottom: "0.75rem",
                 }}
               >
-                {APP_VERSION_LABEL}
-              </span>
+                {t.common.version} {APP_VERSION_STRING}
+              </div>
             </div>
           </div>
 
@@ -424,66 +449,66 @@ export default function SimulationScreen({
 
         <div className="card-header">
           <div>
-            <p className="eyebrow">Ruins and final projection</p>
-            <h1>Day 3 finish</h1>
+            <p className="eyebrow">{t.simulation.eyebrow}</p>
+            <h1>{t.simulation.day3Finish}</h1>
           </div>
           <div className="inline-actions">
             <button className="secondary-button" onClick={onBack}>
-              Back
+              {t.common.back}
             </button>
             <button
               className="secondary-button"
               onClick={onCopyCurrentToScenario}
             >
-              Copy current to simulation
+              {t.common.copyCurrentToSimulation}
             </button>
           </div>
         </div>
 
         <div className="top-grid">
           <label className="field">
-            <span>Current day</span>
+            <span>{t.common.currentDay}</span>
             <select
               value={currentDay}
               onChange={(event) =>
                 onCurrentDayChange(Number(event.target.value) as DayNumber)
               }
             >
-              <option value={1}>Day 1</option>
-              <option value={2}>Day 2</option>
-              <option value={3}>Day 3</option>
+              <option value={1}>{t.common.day1}</option>
+              <option value={2}>{t.common.day2}</option>
+              <option value={3}>{t.common.day3}</option>
             </select>
           </label>
 
           <div className="info-box">
-            <span className="info-label">Current GMT time</span>
+            <span className="info-label">{t.common.currentGmtTime}</span>
             <strong>
               {utcDate} {utcTime} GMT
             </strong>
           </div>
 
           <div className="info-box">
-            <span className="info-label">Minutes remaining to the end</span>
+            <span className="info-label">
+              {t.common.minutesRemainingToTheEnd}
+            </span>
             <strong>{numberFormatter.format(totalMinutesRemaining)}</strong>
           </div>
         </div>
 
         <div className="note-box">
-          <strong>How to read the final table:</strong>
+          <strong>{t.simulation.howToRead}</strong>
           <br />
-          First-capture points = bonus selected in the first-capture column that
-          has not yet been added to the current points.
+          {t.simulation.noteLine1}
           <br />
-          Points / min = points per minute each tribe is receiving from the
-          simulated ownership right now.
+          {t.simulation.noteLine2}
           <br />
-          Final simulated = current points + pending first-capture bonus +
-          future production until the end of Day 3.
+          {t.simulation.noteLine3}
         </div>
       </section>
 
       <RuinTable
-        title="Bastions"
+        title={t.simulation.bastions}
+        t={t}
         ruins={bastions}
         ruinStateMap={ruinStateMap}
         tribes={tribes}
@@ -491,7 +516,8 @@ export default function SimulationScreen({
       />
 
       <RuinTable
-        title="Valkyries"
+        title={t.simulation.valkyries}
+        t={t}
         ruins={valkyries}
         ruinStateMap={ruinStateMap}
         tribes={tribes}
@@ -499,7 +525,8 @@ export default function SimulationScreen({
       />
 
       <RuinTable
-        title="Temple"
+        title={t.simulation.temple}
+        t={t}
         ruins={temples}
         ruinStateMap={ruinStateMap}
         tribes={tribes}
@@ -509,7 +536,7 @@ export default function SimulationScreen({
       <section className="card">
         <div className="card-header">
           <div>
-            <h2>Final summary</h2>
+            <h2>{t.simulation.finalSummary}</h2>
           </div>
         </div>
 
@@ -517,13 +544,13 @@ export default function SimulationScreen({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Tribe</th>
-                <th>Current points</th>
-                <th>First capture</th>
-                <th>Points / min</th>
-                <th>Final if unchanged</th>
-                <th>Final simulated</th>
-                <th>Difference</th>
+                <th>{t.common.tribe}</th>
+                <th>{t.common.currentPoints}</th>
+                <th>{t.common.firstCapture}</th>
+                <th>{t.common.pointsPerMinute}</th>
+                <th>{t.common.finalIfUnchanged}</th>
+                <th>{t.common.finalSimulated}</th>
+                <th>{t.common.difference}</th>
               </tr>
             </thead>
             <tbody>
@@ -590,7 +617,7 @@ export default function SimulationScreen({
         </div>
       </section>
 
-      <ScoreEvolutionChart tribes={tribes} timeline={simulatedTimeline} />
+      <ScoreEvolutionChart tribes={tribes} timeline={simulatedTimeline} t={t} />
     </div>
   );
 }

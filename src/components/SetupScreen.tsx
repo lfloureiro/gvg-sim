@@ -1,41 +1,54 @@
+import { LANGUAGE_OPTIONS } from "../i18n";
+import type { AppText } from "../i18n";
+import type { Language } from "../types";
 import {
-  APP_VERSION_LABEL,
+  APP_VERSION_STRING,
   PHOENIX_MOTTO,
   PHOENIX_TITLE,
 } from "../version";
 
 type SetupScreenProps = {
+  language: Language;
+  t: AppText;
   tribeNames: string[];
   tribeColors: string[];
   currentScores: number[];
   error: string;
+  onLanguageChange: (language: Language) => void;
   onTribeNameChange: (index: number, value: string) => void;
   onTribeColorChange: (index: number, value: string) => void;
   onCurrentScoreChange: (index: number, value: number) => void;
   onContinue: () => void;
 };
 
-const COLOR_OPTIONS = [
-  { value: "#ff6b6b", label: "Red" },
-  { value: "#4dabf7", label: "Blue" },
-  { value: "#51cf66", label: "Green" },
-  { value: "#ffd43b", label: "Yellow" },
-  { value: "#b197fc", label: "Purple" },
-  { value: "#ffa94d", label: "Orange" },
-  { value: "#f783ac", label: "Pink" },
-  { value: "#63e6be", label: "Mint" },
-];
+function getColorOptions(t: AppText) {
+  return [
+    { value: "#ff6b6b", label: t.common.colours.red },
+    { value: "#4dabf7", label: t.common.colours.blue },
+    { value: "#51cf66", label: t.common.colours.green },
+    { value: "#ffd43b", label: t.common.colours.yellow },
+    { value: "#b197fc", label: t.common.colours.purple },
+    { value: "#ffa94d", label: t.common.colours.orange },
+    { value: "#f783ac", label: t.common.colours.pink },
+    { value: "#63e6be", label: t.common.colours.mint },
+  ];
+}
 
 export default function SetupScreen({
+  language,
+  t,
   tribeNames,
   tribeColors,
   currentScores,
   error,
+  onLanguageChange,
   onTribeNameChange,
   onTribeColorChange,
   onCurrentScoreChange,
   onContinue,
 }: SetupScreenProps) {
+  const colorOptions = getColorOptions(t);
+
   return (
     <section className="card">
       <div
@@ -54,31 +67,45 @@ export default function SetupScreen({
           style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
         >
           <p className="phoenix-kicker">{PHOENIX_TITLE}</p>
-          <h1 className="phoenix-title">GvG Score Simulator</h1>
-          <p className="phoenix-subtitle">
-            Tribe 1 is always Phoenix Veritas. Choose names, colours and current
-            points for the remaining tribes.
-          </p>
+          <h1 className="phoenix-title">{t.setup.title}</h1>
+          <p className="phoenix-subtitle">{t.setup.subtitle}</p>
 
           <div
             style={{
               marginTop: "0.7rem",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.65rem",
+              display: "flex",
+              gap: "0.8rem",
               flexWrap: "wrap",
+              alignItems: "end",
             }}
           >
-            <span
+            <label className="field" style={{ minWidth: 180 }}>
+              <span>{t.common.language}</span>
+              <select
+                value={language}
+                onChange={(event) =>
+                  onLanguageChange(event.target.value as Language)
+                }
+              >
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div
               style={{
                 fontSize: "0.78rem",
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
                 opacity: 0.78,
+                paddingBottom: "0.75rem",
               }}
             >
-              {APP_VERSION_LABEL}
-            </span>
+              {t.common.version} {APP_VERSION_STRING}
+            </div>
           </div>
         </div>
 
@@ -124,7 +151,7 @@ export default function SetupScreen({
         </div>
       </div>
 
-      <h2>Initial tribe data</h2>
+      <h2>{t.setup.initialTribeData}</h2>
 
       <div className="tribe-setup-grid">
         {tribeNames.map((name, index) => {
@@ -138,7 +165,9 @@ export default function SetupScreen({
               }`}
             >
               <label className="field">
-                <span>Tribe name {index + 1}</span>
+                <span>
+                  {t.setup.tribeName} {index + 1}
+                </span>
                 <input
                   type="text"
                   value={isPhoenix ? "Phoenix Veritas" : name}
@@ -146,19 +175,19 @@ export default function SetupScreen({
                   onChange={(event) =>
                     onTribeNameChange(index, event.target.value)
                   }
-                  placeholder={`Tribe ${index + 1}`}
+                  placeholder={`${t.common.tribe} ${index + 1}`}
                 />
               </label>
 
               <label className="field">
-                <span>Colour</span>
+                <span>{t.common.colour}</span>
                 <select
                   value={tribeColors[index]}
                   onChange={(event) =>
                     onTribeColorChange(index, event.target.value)
                   }
                 >
-                  {COLOR_OPTIONS.map((option) => (
+                  {colorOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -167,7 +196,7 @@ export default function SetupScreen({
               </label>
 
               <label className="field">
-                <span>Current points</span>
+                <span>{t.common.currentPoints}</span>
                 <input
                   type="number"
                   min={0}
@@ -187,7 +216,7 @@ export default function SetupScreen({
 
       <div className="actions">
         <button className="primary-button" onClick={onContinue}>
-          Continue
+          {t.common.continue}
         </button>
       </div>
     </section>

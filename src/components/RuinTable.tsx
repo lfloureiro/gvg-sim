@@ -1,3 +1,4 @@
+import type { AppText } from "../i18n";
 import type {
   RuinDefinition,
   RuinState,
@@ -7,6 +8,7 @@ import type {
 
 type RuinTableProps = {
   title: string;
+  t: AppText;
   ruins: RuinDefinition[];
   ruinStateMap: Record<string, RuinState>;
   tribes: Tribe[];
@@ -20,10 +22,12 @@ type RuinTableProps = {
 function TribeSelect({
   value,
   tribes,
+  noTribeLabel,
   onChange,
 }: {
   value: string | null;
   tribes: Tribe[];
+  noTribeLabel: string;
   onChange: (value: string | null) => void;
 }) {
   return (
@@ -31,7 +35,7 @@ function TribeSelect({
       value={value ?? ""}
       onChange={(event) => onChange(event.target.value || null)}
     >
-      <option value="">— no tribe —</option>
+      <option value="">{noTribeLabel}</option>
       {tribes.map((tribe) => (
         <option key={tribe.id} value={tribe.id}>
           {tribe.name}
@@ -43,6 +47,7 @@ function TribeSelect({
 
 export default function RuinTable({
   title,
+  t,
   ruins,
   ruinStateMap,
   tribes,
@@ -60,10 +65,10 @@ export default function RuinTable({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Ruin</th>
-              <th>First capture</th>
-              <th>Current owner</th>
-              <th>Simulate if changed now</th>
+              <th>{t.common.ruin}</th>
+              <th>{t.common.firstCapture}</th>
+              <th>{t.common.currentOwner}</th>
+              <th>{t.common.simulateIfChangedNow}</th>
             </tr>
           </thead>
           <tbody>
@@ -77,6 +82,7 @@ export default function RuinTable({
                     <TribeSelect
                       value={state?.firstCaptureBy ?? null}
                       tribes={tribes}
+                      noTribeLabel={t.common.noTribe}
                       onChange={(value) =>
                         onChange(ruin.id, "firstCaptureBy", value)
                       }
@@ -86,6 +92,7 @@ export default function RuinTable({
                     <TribeSelect
                       value={state?.currentOwner ?? null}
                       tribes={tribes}
+                      noTribeLabel={t.common.noTribe}
                       onChange={(value) =>
                         onChange(ruin.id, "currentOwner", value)
                       }
@@ -95,6 +102,7 @@ export default function RuinTable({
                     <TribeSelect
                       value={state?.simulatedOwner ?? null}
                       tribes={tribes}
+                      noTribeLabel={t.common.noTribe}
                       onChange={(value) =>
                         onChange(ruin.id, "simulatedOwner", value)
                       }
