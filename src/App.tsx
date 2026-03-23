@@ -91,7 +91,10 @@ function isLanguage(value: unknown): value is Language {
     value === "pt" ||
     value === "it" ||
     value === "ru" ||
-    value === "tr"
+    value === "tr" ||
+    value === "de" ||
+    value === "fr" ||
+    value === "uk"
   );
 }
 

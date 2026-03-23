@@ -2,7 +2,7 @@ export type DayNumber = 1 | 2 | 3;
 export type RuinType = "bastion" | "valkyrie" | "temple";
 export type TribeId = string;
 export type NullableTribeId = TribeId | null;
-export type Language = "en" | "pt" | "it" | "ru" | "tr";
+export type Language = "en" | "pt" | "it" | "ru" | "tr" | "de" | "fr" | "uk";
 
 export type Tribe = {
   id: TribeId;
