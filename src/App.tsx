@@ -240,14 +240,31 @@ export default function App() {
   ) {
     setState((previous) => ({
       ...previous,
-      ruinStates: previous.ruinStates.map((ruinState) =>
-        ruinState.id === ruinId
-          ? {
-              ...ruinState,
-              [field]: value,
-            }
-          : ruinState
-      ),
+      ruinStates: previous.ruinStates.map((ruinState) => {
+        if (ruinState.id !== ruinId) {
+          return ruinState;
+        }
+
+        if (field === "currentOwner") {
+          const previousCurrentOwner = ruinState.currentOwner;
+          const shouldSyncSimulation =
+            ruinState.simulatedOwner === null ||
+            ruinState.simulatedOwner === previousCurrentOwner;
+
+          return {
+            ...ruinState,
+            currentOwner: value,
+            simulatedOwner: shouldSyncSimulation
+              ? value
+              : ruinState.simulatedOwner,
+          };
+        }
+
+        return {
+          ...ruinState,
+          [field]: value,
+        };
+      }),
     }));
   }
 

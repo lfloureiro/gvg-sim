@@ -73,6 +73,17 @@ function ScoreEvolutionChart({
   const top = 24;
   const bottom = 48;
 
+  const strokePatterns = [
+    undefined,
+    "8 6",
+    "3 5",
+    "10 4 2 4",
+    "2 4",
+    "12 6",
+    "6 4 2 4",
+    "1 4",
+  ];
+
   const allValues = timeline.flatMap((point) =>
     tribes.map((tribe) => point.scores[tribe.id] ?? 0)
   );
@@ -112,6 +123,35 @@ function ScoreEvolutionChart({
       .join(" ");
   }
 
+  const coincidentGroupsByIndex = timeline.map((point) => {
+    const groups = new Map<number, string[]>();
+
+    tribes.forEach((tribe) => {
+      const score = point.scores[tribe.id] ?? 0;
+      const existing = groups.get(score) ?? [];
+      existing.push(tribe.id);
+      groups.set(score, existing);
+    });
+
+    return groups;
+  });
+
+  function getMarkerX(tribeId: string, pointIndex: number): number {
+    const baseX = getX(pointIndex);
+    const score = timeline[pointIndex].scores[tribeId] ?? 0;
+    const group = coincidentGroupsByIndex[pointIndex].get(score) ?? [tribeId];
+
+    if (group.length === 1) {
+      return baseX;
+    }
+
+    const tribePosition = group.indexOf(tribeId);
+    const center = (group.length - 1) / 2;
+    const spread = 6;
+
+    return baseX + (tribePosition - center) * spread;
+  }
+
   const horizontalGridValues = Array.from({ length: 5 }, (_, index) => {
     const ratio = index / 4;
     return maxValue - (maxValue - minValue) * ratio;
@@ -136,7 +176,7 @@ function ScoreEvolutionChart({
           marginBottom: "1rem",
         }}
       >
-        {tribes.map((tribe) => (
+        {tribes.map((tribe, index) => (
           <div
             key={tribe.id}
             style={{
@@ -155,7 +195,27 @@ function ScoreEvolutionChart({
                 display: "inline-block",
               }}
             />
-            <span>{tribe.name}</span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <svg width="18" height="8" viewBox="0 0 18 8" aria-hidden="true">
+                <line
+                  x1="1"
+                  y1="4"
+                  x2="17"
+                  y2="4"
+                  stroke={tribe.color}
+                  strokeWidth="3"
+                  strokeDasharray={strokePatterns[index % strokePatterns.length]}
+                  strokeLinecap="round"
+                />
+              </svg>
+              {tribe.name}
+            </span>
           </div>
         ))}
       </div>
@@ -222,7 +282,7 @@ function ScoreEvolutionChart({
             );
           })}
 
-          {tribes.map((tribe) => (
+          {tribes.map((tribe, index) => (
             <g key={tribe.id}>
               <path
                 d={buildPath(tribe.id)}
@@ -231,14 +291,17 @@ function ScoreEvolutionChart({
                 strokeWidth={3}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                strokeDasharray={strokePatterns[index % strokePatterns.length]}
               />
-              {timeline.map((point, index) => (
+              {timeline.map((point, pointIndex) => (
                 <circle
                   key={`${tribe.id}-${point.label}`}
-                  cx={getX(index)}
+                  cx={getMarkerX(tribe.id, pointIndex)}
                   cy={getY(point.scores[tribe.id] ?? 0)}
-                  r={4}
+                  r={4.5}
                   fill={tribe.color}
+                  stroke="rgba(255,255,255,0.85)"
+                  strokeWidth={1.5}
                 />
               ))}
             </g>
@@ -564,8 +627,7 @@ export default function SimulationScreen({
                   currentRow?.finalScore ?? tribe.currentScore;
                 const simulatedFinal =
                   simulatedRow?.finalScore ?? tribe.currentScore;
-                const pointsPerMinute =
-                  simulatedRow?.pointsPerMinute ?? 0;
+                const pointsPerMinute = simulatedRow?.pointsPerMinute ?? 0;
                 const delta = simulatedFinal - currentFinal;
                 const featured = isPhoenixVeritas(tribe.name);
 
