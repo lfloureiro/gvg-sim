@@ -150,6 +150,22 @@ export default function EnemyTribeAnalysisScreen({
         <button className="secondary-button" onClick={onBack}>
           ← {t.common.back}
         </button>
+
+        {rows.length ? (
+          <button
+            className="primary-button"
+            onClick={() =>
+              copyEnemyAnalysisReport(
+                rows,
+                sortField,
+                selectedFolderLabel || "enemy-analysis",
+                t
+              )
+            }
+          >
+            Copy report
+          </button>
+        ) : null}
       </div>
 
       <section className="phoenix-banner mode-banner phoenix-banner-with-watermark">
@@ -394,4 +410,79 @@ async function readImageFilesFromDirectory(
   }
 
   return files;
+}
+
+async function copyEnemyAnalysisReport(
+  rows: EnemyAnalysisRow[],
+  sortField: SortField,
+  folderLabel: string,
+  t: ReturnType<typeof getTranslation>
+) {
+  const report = buildEnemyAnalysisTextReport(rows, sortField, folderLabel, t);
+
+  try {
+    await navigator.clipboard.writeText(report);
+    alert("Report copied to clipboard.");
+  } catch {
+    fallbackCopyText(report);
+    alert("Report copied to clipboard.");
+  }
+}
+
+function buildEnemyAnalysisTextReport(
+  rows: EnemyAnalysisRow[],
+  sortField: SortField,
+  folderLabel: string,
+  t: ReturnType<typeof getTranslation>
+) {
+  const grouped = groupRowsByArmy(rows, sortField);
+
+  const sortLabel =
+    sortField === "individualMight"
+      ? t.enemyAnalysis.individualMight
+      : t.enemyAnalysis.heroMight;
+
+  const sections: string[] = [];
+
+  sections.push("ENEMY TRIBE ANALYSIS");
+  sections.push(`${t.enemyAnalysis.selectedFolder}: ${folderLabel}`);
+  sections.push(`${t.enemyAnalysis.orderBy}: ${sortLabel}`);
+  sections.push("");
+
+  for (const group of grouped) {
+    const label = getArmyLabel(group.armyType, t);
+
+    sections.push(label);
+
+    if (!group.rows.length) {
+      sections.push(`- ${t.enemyAnalysis.noChiefsClassified} ${label}.`);
+      sections.push("");
+      continue;
+    }
+
+    for (const row of group.rows) {
+      sections.push(
+        `- ${row.chiefName} | IM: ${formatNumber(row.individualMight)} | HM: ${formatNumber(row.heroMight)} | Build: ${getPrimarySlotSummary(row)} | ${t.enemyAnalysis.confidence}: ${getConfidenceLabel(row.confidence, t)}`
+      );
+    }
+
+    sections.push("");
+  }
+
+  return sections.join("\n").trim();
+}
+
+function fallbackCopyText(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
