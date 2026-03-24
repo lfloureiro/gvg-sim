@@ -10,9 +10,11 @@ import {
   type EnemyAnalysisRow,
   type SortField,
 } from "./analysis";
+import type { Language } from "../../types";
 
 type EnemyTribeAnalysisScreenProps = {
   onBack: () => void;
+  language: Language;
 };
 
 type DirectoryFile = File & {

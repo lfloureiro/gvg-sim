@@ -1,20 +1,15 @@
-import { LANGUAGE_OPTIONS } from "../i18n";
 import type { AppText } from "../i18n";
-import type { Language } from "../types";
 import {
-  APP_VERSION_STRING,
   PHOENIX_MOTTO,
   PHOENIX_TITLE,
 } from "../version";
 
 type SetupScreenProps = {
-  language: Language;
   t: AppText;
   tribeNames: string[];
   tribeColors: string[];
   currentScores: number[];
   error: string;
-  onLanguageChange: (language: Language) => void;
   onTribeNameChange: (index: number, value: string) => void;
   onTribeColorChange: (index: number, value: string) => void;
   onCurrentScoreChange: (index: number, value: number) => void;
@@ -35,13 +30,11 @@ function getColorOptions(t: AppText) {
 }
 
 export default function SetupScreen({
-  language,
   t,
   tribeNames,
   tribeColors,
   currentScores,
   error,
-  onLanguageChange,
   onTribeNameChange,
   onTribeColorChange,
   onCurrentScoreChange,
@@ -52,7 +45,7 @@ export default function SetupScreen({
   return (
     <section className="card">
       <div
-        className="phoenix-banner"
+        className="phoenix-banner phoenix-banner-compact"
         style={{
           position: "relative",
           display: "flex",
@@ -66,47 +59,8 @@ export default function SetupScreen({
           className="phoenix-banner-inner"
           style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
         >
-          <p className="phoenix-kicker">{PHOENIX_TITLE}</p>
           <h1 className="phoenix-title">{t.setup.title}</h1>
           <p className="phoenix-subtitle">{t.setup.subtitle}</p>
-
-          <div
-            style={{
-              marginTop: "0.7rem",
-              display: "flex",
-              gap: "0.8rem",
-              flexWrap: "wrap",
-              alignItems: "end",
-            }}
-          >
-            <label className="field" style={{ minWidth: 180 }}>
-              <span>{t.common.language}</span>
-              <select
-                value={language}
-                onChange={(event) =>
-                  onLanguageChange(event.target.value as Language)
-                }
-              >
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div
-              style={{
-                fontSize: "0.78rem",
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                opacity: 0.78,
-                paddingBottom: "0.75rem",
-              }}
-            >
-              {t.common.version} {APP_VERSION_STRING}
-            </div>
-          </div>
         </div>
 
         <div

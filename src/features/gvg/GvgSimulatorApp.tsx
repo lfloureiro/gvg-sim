@@ -32,7 +32,6 @@ type SetupErrorKey =
 
 type PersistedState = {
   configured: boolean;
-  language: Language;
   tribeNames: string[];
   tribeColors: string[];
   currentScores: number[];
@@ -41,13 +40,13 @@ type PersistedState = {
 };
 
 type GvgSimulatorAppProps = {
+  language: Language;
   onReturnHome?: () => void;
 };
 
 function createDefaultState(): PersistedState {
   return {
     configured: false,
-    language: "en",
     tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
       index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
     ),
@@ -89,19 +88,6 @@ function normalizeRuinStates(input: unknown): RuinState[] {
   });
 }
 
-function isLanguage(value: unknown): value is Language {
-  return (
-    value === "en" ||
-    value === "pt" ||
-    value === "it" ||
-    value === "ru" ||
-    value === "tr" ||
-    value === "de" ||
-    value === "fr" ||
-    value === "uk"
-  );
-}
-
 function loadInitialState(): PersistedState {
   const defaults = createDefaultState();
 
@@ -123,7 +109,6 @@ function loadInitialState(): PersistedState {
 
     return {
       configured: Boolean(parsed.configured),
-      language: isLanguage(parsed.language) ? parsed.language : defaults.language,
       tribeNames: loadedNames,
       tribeColors:
         Array.isArray(parsed.tribeColors) &&
@@ -149,13 +134,14 @@ function loadInitialState(): PersistedState {
 }
 
 export default function GvgSimulatorApp({
+  language,
   onReturnHome,
 }: GvgSimulatorAppProps) {
   const [state, setState] = useState<PersistedState>(loadInitialState);
   const [setupErrorKey, setSetupErrorKey] = useState<SetupErrorKey>("");
   const [currentUtc, setCurrentUtc] = useState(new Date());
 
-  const t = useMemo(() => getTranslation(state.language), [state.language]);
+  const t = useMemo(() => getTranslation(language), [language]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -184,13 +170,6 @@ export default function GvgSimulatorApp({
       })),
     [state.tribeNames, state.tribeColors, state.currentScores]
   );
-
-  function handleLanguageChange(language: Language) {
-    setState((previous) => ({
-      ...previous,
-      language,
-    }));
-  }
 
   function handleTribeNameChange(index: number, value: string) {
     if (index === 0) {
@@ -332,13 +311,11 @@ export default function GvgSimulatorApp({
 
         {!state.configured ? (
           <SetupScreen
-            language={state.language}
             t={t}
             tribeNames={state.tribeNames}
             tribeColors={state.tribeColors}
             currentScores={state.currentScores}
             error={setupErrorKey ? t.errors[setupErrorKey] : ""}
-            onLanguageChange={handleLanguageChange}
             onTribeNameChange={handleTribeNameChange}
             onTribeColorChange={handleTribeColorChange}
             onCurrentScoreChange={handleCurrentScoreChange}
@@ -346,13 +323,11 @@ export default function GvgSimulatorApp({
           />
         ) : (
           <SimulationScreen
-            language={state.language}
             t={t}
             tribes={tribes}
             currentDay={state.currentDay}
             currentUtc={currentUtc}
             ruinStates={state.ruinStates}
-            onLanguageChange={handleLanguageChange}
             onCurrentDayChange={handleCurrentDayChange}
             onRuinChange={handleRuinChange}
             onCopyCurrentToScenario={handleCopyCurrentToScenario}

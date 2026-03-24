@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { LANGUAGE_OPTIONS } from "../i18n";
 import type { AppText } from "../i18n";
 import { RUIN_DEFINITIONS } from "../constants";
 import {
@@ -8,27 +7,23 @@ import {
 } from "../utils/scoring";
 import type {
   DayNumber,
-  Language,
   RuinState,
   RuinStateField,
   Tribe,
   ScenarioTimelinePoint,
 } from "../types";
 import {
-  APP_VERSION_STRING,
   PHOENIX_MOTTO,
   PHOENIX_TITLE,
 } from "../version";
 import RuinTable from "./RuinTable";
 
 type SimulationScreenProps = {
-  language: Language;
   t: AppText;
   tribes: Tribe[];
   currentDay: DayNumber;
   currentUtc: Date;
   ruinStates: RuinState[];
-  onLanguageChange: (language: Language) => void;
   onCurrentDayChange: (day: DayNumber) => void;
   onRuinChange: (
     ruinId: string,
@@ -313,13 +308,11 @@ function ScoreEvolutionChart({
 }
 
 export default function SimulationScreen({
-  language,
   t,
   tribes,
   currentDay,
   currentUtc,
   ruinStates,
-  onLanguageChange,
   onCurrentDayChange,
   onRuinChange,
   onCopyCurrentToScenario,
@@ -384,17 +377,13 @@ export default function SimulationScreen({
 
   const currentProjectionMap = useMemo(
     () =>
-      Object.fromEntries(
-        currentProjection.rows.map((row) => [row.tribeId, row])
-      ),
+      Object.fromEntries(currentProjection.rows.map((row) => [row.tribeId, row])),
     [currentProjection.rows]
   );
 
   const simulatedProjectionMap = useMemo(
     () =>
-      Object.fromEntries(
-        simulatedProjection.rows.map((row) => [row.tribeId, row])
-      ),
+      Object.fromEntries(simulatedProjection.rows.map((row) => [row.tribeId, row])),
     [simulatedProjection.rows]
   );
 
@@ -425,47 +414,8 @@ export default function SimulationScreen({
             className="phoenix-banner-inner"
             style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
           >
-            <p className="phoenix-kicker">{PHOENIX_TITLE}</p>
             <h1 className="phoenix-title">{t.simulation.title}</h1>
             <p className="phoenix-subtitle">{t.simulation.subtitle}</p>
-
-            <div
-              style={{
-                marginTop: "0.7rem",
-                display: "flex",
-                gap: "0.8rem",
-                flexWrap: "wrap",
-                alignItems: "end",
-              }}
-            >
-              <label className="field" style={{ minWidth: 180 }}>
-                <span>{t.common.language}</span>
-                <select
-                  value={language}
-                  onChange={(event) =>
-                    onLanguageChange(event.target.value as Language)
-                  }
-                >
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div
-                style={{
-                  fontSize: "0.78rem",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  opacity: 0.78,
-                  paddingBottom: "0.75rem",
-                }}
-              >
-                {t.common.version} {APP_VERSION_STRING}
-              </div>
-            </div>
           </div>
 
           <div

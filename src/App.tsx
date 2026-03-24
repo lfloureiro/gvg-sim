@@ -11,7 +11,12 @@ export default function App() {
   const [language, setLanguage] = useState<Language>("en");
 
   if (view === "gvg") {
-    return <GvgSimulatorApp onReturnHome={() => setView("home")} />;
+    return (
+      <GvgSimulatorApp
+        language={language}
+        onReturnHome={() => setView("home")}
+      />
+    );
   }
 
   return (
@@ -27,6 +32,7 @@ export default function App() {
         ) : (
           <EnemyTribeAnalysisScreen
             onBack={() => setView("home")}
+            language={language}
           />
         )}
       </div>

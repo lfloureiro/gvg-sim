@@ -78,13 +78,32 @@ const LEVEL_BY_ARTIFACT_COLOR: Record<ArtifactColor, number> = {
   red: 5,
 };
 
-const SLOT_REGIONS: Record<ArtifactSlotKey, NormalizedRegion> = {
-  sword: { x: 0.738, y: 0.484, width: 0.069, height: 0.155 },
-  shield: { x: 0.806, y: 0.484, width: 0.069, height: 0.155 },
-  boots: { x: 0.874, y: 0.484, width: 0.069, height: 0.155 },
-  chest: { x: 0.738, y: 0.663, width: 0.069, height: 0.155 },
-  helmet: { x: 0.806, y: 0.663, width: 0.069, height: 0.155 },
-  pants: { x: 0.738, y: 0.842, width: 0.069, height: 0.155 },
+type ArtifactPanelAnchor = {
+  left: number;
+  top: number;
+  slotWidth: number;
+  slotHeight: number;
+  colGap: number;
+  rowGap: number;
+};
+
+const TITLE_SEARCH_REGION: NormalizedRegion = {
+  x: 0.685,
+  y: 0.335,
+  width: 0.305,
+  height: 0.125,
+};
+
+const SLOT_GRID_POSITION: Record<
+  ArtifactSlotKey,
+  { col: number; row: number }
+> = {
+  sword: { col: 0, row: 0 },
+  shield: { col: 1, row: 0 },
+  boots: { col: 2, row: 0 },
+  chest: { col: 0, row: 1 },
+  helmet: { col: 1, row: 1 },
+  pants: { col: 0, row: 2 },
 };
 
 const NAME_REGIONS: NormalizedRegion[] = [
@@ -265,10 +284,12 @@ function compareRows(
 async function analyzeSlots(
   rootCanvas: HTMLCanvasElement
 ): Promise<Record<ArtifactSlotKey, ArtifactSlotAnalysis>> {
+  const anchor = await findArtifactPanelAnchor(rootCanvas);
+
   const entries = await Promise.all(
-    (Object.keys(SLOT_REGIONS) as ArtifactSlotKey[]).map(async (slot) => {
-      const slotCanvas = cropNormalized(rootCanvas, SLOT_REGIONS[slot]);
-      const color = detectArtifactColor(slotCanvas);
+    (Object.keys(SLOT_GRID_POSITION) as ArtifactSlotKey[]).map(async (slot) => {
+      const slotCanvas = cropSlotFromAnchor(rootCanvas, anchor, slot);
+      const color = detectArtifactColor(slotCanvas, slot);
       const runeColor = detectRuneColor(slotCanvas);
       const level = LEVEL_BY_ARTIFACT_COLOR[color];
 
@@ -289,6 +310,108 @@ async function analyzeSlots(
   return Object.fromEntries(
     entries
   ) as Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
+}
+
+async function findArtifactPanelAnchor(
+  rootCanvas: HTMLCanvasElement
+): Promise<ArtifactPanelAnchor> {
+  const rootWidth = rootCanvas.width;
+  const rootHeight = rootCanvas.height;
+
+  const fallback: ArtifactPanelAnchor = {
+    left: rootWidth * 0.738,
+    top: rootHeight * 0.484,
+    slotWidth: rootWidth * 0.069,
+    slotHeight: rootHeight * 0.155,
+    colGap: rootWidth * 0.068,
+    rowGap: rootHeight * 0.179,
+  };
+
+  try {
+    const searchCanvas = cropNormalized(rootCanvas, TITLE_SEARCH_REGION);
+    const prepared = upscaleCanvas(buildWhiteTextCanvas(searchCanvas), 3);
+
+    const result = await Tesseract.recognize(prepared, OCR_LANGUAGE, {
+      tessedit_pageseg_mode: "6",
+      tessedit_char_whitelist:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ",
+    } as never);
+
+    const words = (result.data.words ?? []) as Array<{
+      text: string;
+      bbox: { x0: number; y0: number; x1: number; y1: number };
+    }>;
+
+    const artifactWord = words.find((word) =>
+      /artifact/i.test((word.text ?? "").replace(/[^A-Za-z]/g, ""))
+    );
+
+    if (!artifactWord) {
+      return fallback;
+    }
+
+    const searchLeft = TITLE_SEARCH_REGION.x * rootWidth;
+    const searchTop = TITLE_SEARCH_REGION.y * rootHeight;
+    const scale = 3;
+
+    const titleLeft = searchLeft + artifactWord.bbox.x0 / scale;
+    const titleBottom = searchTop + artifactWord.bbox.y1 / scale;
+
+    return {
+      left: titleLeft - rootWidth * 0.052,
+      top: titleBottom + rootHeight * 0.020,
+      slotWidth: rootWidth * 0.069,
+      slotHeight: rootHeight * 0.155,
+      colGap: rootWidth * 0.068,
+      rowGap: rootHeight * 0.179,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function cropSlotFromAnchor(
+  rootCanvas: HTMLCanvasElement,
+  anchor: ArtifactPanelAnchor,
+  slot: ArtifactSlotKey
+) {
+  const grid = SLOT_GRID_POSITION[slot];
+
+  const left = anchor.left + grid.col * anchor.colGap;
+  const top = anchor.top + grid.row * anchor.rowGap;
+
+  return cropPixels(
+    rootCanvas,
+    left,
+    top,
+    anchor.slotWidth,
+    anchor.slotHeight
+  );
+}
+
+function cropPixels(
+  source: HTMLCanvasElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(Math.floor(width), 1);
+  canvas.height = Math.max(Math.floor(height), 1);
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return canvas;
+  }
+
+  const sx = Math.max(Math.floor(x), 0);
+  const sy = Math.max(Math.floor(y), 0);
+  const sw = Math.min(Math.floor(width), source.width - sx);
+  const sh = Math.min(Math.floor(height), source.height - sy);
+
+  context.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
 function buildArmyScores(
@@ -358,10 +481,12 @@ async function extractChiefName(rootCanvas: HTMLCanvasElement) {
     const crop = cropNormalized(rootCanvas, region);
     const yellowMask = buildYellowTextCanvas(crop);
     const prepared = upscaleCanvas(yellowMask, 4);
+
     const rawText = await recognizeText(prepared, {
       whitelist:
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
     });
+
     const normalized = normalizeChiefName(rawText);
 
     if (normalized !== "Unknown") {
@@ -377,7 +502,7 @@ async function extractChiefName(rootCanvas: HTMLCanvasElement) {
     (left, right) => scoreNameCandidate(right) - scoreNameCandidate(left)
   );
 
-  return candidates[0];
+  return cleanLeadingNoise(candidates[0]);
 }
 
 async function extractMight(
@@ -425,13 +550,42 @@ function normalizeChiefName(raw: string) {
     return "Unknown";
   }
 
-  const joined = tokens.join("").replace(/^[-_]+/, "").replace(/^[WVNJ]+(?=Xcal$)/i, "");
+  const joined = tokens.join("").replace(/^[-_]+/, "");
 
   if (!joined || joined.length <= 1) {
     return "Unknown";
   }
 
   return joined;
+}
+
+function cleanLeadingNoise(name: string) {
+  if (name === "Unknown") {
+    return name;
+  }
+
+  let cleaned = name;
+
+  cleaned = cleaned.replace(/^[^A-Za-z0-9]+/, "");
+
+  if (/xcal$/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^[A-Za-z]{2,6}(?=Xcal$)/i, "");
+    cleaned = `Phvt${cleaned}`;
+  }
+
+  if (/^pvi/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^pvi/i, "Phvt");
+  }
+
+  if (/^phvi/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^phvi/i, "Phvt");
+  }
+
+  if (/^pivt/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^pivt/i, "Phvt");
+  }
+
+  return cleaned;
 }
 
 function scoreNameCandidate(name: string) {
@@ -453,9 +607,12 @@ function scoreNameCandidate(name: string) {
   return score;
 }
 
-function detectArtifactColor(slotCanvas: HTMLCanvasElement): ArtifactColor {
+function detectArtifactColor(
+  slotCanvas: HTMLCanvasElement,
+  slot: ArtifactSlotKey
+): ArtifactColor {
   const counts = countArtifactRingColors(slotCanvas);
-  return chooseArtifactColorFromCounts(counts);
+  return chooseArtifactColorFromCounts(counts, slot);
 }
 
 function detectRuneColor(slotCanvas: HTMLCanvasElement): ArtifactColor {
@@ -471,7 +628,8 @@ function detectRuneColor(slotCanvas: HTMLCanvasElement): ArtifactColor {
 }
 
 function chooseArtifactColorFromCounts(
-  counts: Record<ArtifactColor, number>
+  counts: Record<ArtifactColor, number>,
+  slot?: ArtifactSlotKey
 ): ArtifactColor {
   const strongTotal =
     counts.green + counts.blue + counts.purple + counts.gold + counts.red;
@@ -489,7 +647,18 @@ function chooseArtifactColorFromCounts(
     red: counts.red * 1.03,
   };
 
-  const bestNonGrey = (["green", "blue", "purple", "gold", "red"] as ArtifactColor[])
+  if (slot === "helmet") {
+    if (
+      adjusted.red >= adjusted.gold * 0.62 &&
+      adjusted.red >= adjusted.purple * 0.90
+    ) {
+      return "red";
+    }
+  }
+
+  const bestNonGrey = (
+    ["green", "blue", "purple", "gold", "red"] as ArtifactColor[]
+  )
     .map((color) => ({ color, value: adjusted[color] }))
     .sort((a, b) => b.value - a.value);
 
@@ -504,18 +673,18 @@ function chooseArtifactColorFromCounts(
     first.color === "red" &&
     second &&
     second.color === "gold" &&
-    second.value >= first.value * 0.88
+    second.value >= first.value * 0.90
   ) {
-    return "gold";
+    return slot === "helmet" ? "red" : "gold";
   }
 
   if (
     first.color === "gold" &&
     second &&
     second.color === "red" &&
-    second.value >= first.value * 0.92
+    second.value >= first.value * 0.94
   ) {
-    return "red";
+    return slot === "helmet" ? "red" : "gold";
   }
 
   return first.color;

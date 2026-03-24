@@ -29,7 +29,6 @@ export default function HomeScreen({
       <section className="phoenix-banner mode-banner phoenix-banner-with-watermark">
         <div className="phoenix-banner-inner phoenix-banner-grid">
           <div>
-            <p className="phoenix-kicker">Phoenix Veritas</p>
             <h1 className="phoenix-title">Phoenix Veritas toolkit</h1>
             <p className="phoenix-subtitle">Forged in fire, united in truth.</p>
           </div>
