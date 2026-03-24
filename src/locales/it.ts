@@ -64,6 +64,56 @@ const it: AppText = {
     simulatedScoreEvolutionSubtitle:
       "Crescita del punteggio da adesso fino alla fine del Giorno 3, usando il possesso simulato.",
   },
+  home: {
+    title: "Toolkit Phoenix Veritas",
+    subtitle: "Scegli uno strumento e mantieni la stessa lingua in tutta l'applicazione.",
+    gvgEyebrow: "GvG",
+    gvgTitle: "Simulatore punteggio GvG",
+    gvgDescription:
+      "Configura le tribù, i punti correnti e il possesso delle rovine, poi proietta il risultato finale della giornata.",
+    gvgButton: "Apri GvG",
+    enemyEyebrow: "Analisi",
+    enemyTitle: "Analisi tribù nemica",
+    enemyDescription:
+      "Leggi gli screenshot, rileva il tipo principale di esercito e ordina i capi nemici per potenza.",
+    enemyButton: "Apri analisi",
+  },
+  enemyAnalysis: {
+    title: "Analizza una cartella di screenshot di Fate War",
+    subtitle:
+      "L'analizzatore legge il nome del capo, i due valori di potenza e gli slot decisivi degli artefatti.",
+    inputEyebrow: "Input",
+    inputTitle: "Selezione cartella e modalità di ordinamento",
+    inputSubtitle:
+      "Seleziona una cartella con screenshot della stessa schermata di gioco.",
+    screenshotFolder: "Cartella screenshot",
+    chooseFolder: "Clicca qui per scegliere la cartella degli screenshot",
+    chooseFolderHelp:
+      "Seleziona la cartella che contiene gli screenshot di Fate War da analizzare. L'app legge solo i file.",
+    selectedFolder: "Cartella selezionata",
+    noFolderSelected: "Nessuna cartella selezionata",
+    orderBy: "Ordina i nemici per",
+    artifactNote:
+      "I livelli degli artefatti derivano solo dal colore: grigio 0, verde 1, blu 2, viola 3, oro 4, rosso 5. I colori delle rune sono usati solo come spareggio.",
+    analyzing: "Analisi in corso",
+    step: "Passo",
+    screenshotsAnalyzed: "Screenshot analizzati",
+    archers: "Archers",
+    berserkers: "Berserkers",
+    cavalry: "Cavalry",
+    results: "Risultati",
+    chiefsClassified: "capi classificati come",
+    noChiefsClassified: "Nessun capo classificato come",
+    name: "Nome",
+    individualMight: "Individual Might",
+    heroMight: "Hero Might",
+    primaryBuild: "Build principale",
+    confidence: "Affidabilità",
+    openFolderError: "Impossibile aprire la cartella selezionata.",
+    high: "Alta",
+    medium: "Media",
+    low: "Bassa",
+  },
   errors: {
     allTribesMustHaveAName: "Tutte le tribù devono avere un nome.",
     tribeNamesMustBeUnique: "I nomi delle tribù devono essere unici.",

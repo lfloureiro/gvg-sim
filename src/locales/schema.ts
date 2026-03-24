@@ -36,6 +36,18 @@ export type AppText = {
       mint: string;
     };
   };
+  home: {
+    title: string;
+    subtitle: string;
+    gvgEyebrow: string;
+    gvgTitle: string;
+    gvgDescription: string;
+    gvgButton: string;
+    enemyEyebrow: string;
+    enemyTitle: string;
+    enemyDescription: string;
+    enemyButton: string;
+  };
   setup: {
     title: string;
     subtitle: string;
@@ -57,6 +69,38 @@ export type AppText = {
     finalSummary: string;
     simulatedScoreEvolution: string;
     simulatedScoreEvolutionSubtitle: string;
+  };
+  enemyAnalysis: {
+    title: string;
+    subtitle: string;
+    inputEyebrow: string;
+    inputTitle: string;
+    inputSubtitle: string;
+    screenshotFolder: string;
+    chooseFolder: string;
+    chooseFolderHelp: string;
+    selectedFolder: string;
+    noFolderSelected: string;
+    orderBy: string;
+    artifactNote: string;
+    analyzing: string;
+    step: string;
+    screenshotsAnalyzed: string;
+    archers: string;
+    berserkers: string;
+    cavalry: string;
+    results: string;
+    chiefsClassified: string;
+    noChiefsClassified: string;
+    name: string;
+    individualMight: string;
+    heroMight: string;
+    primaryBuild: string;
+    confidence: string;
+    openFolderError: string;
+    high: string;
+    medium: string;
+    low: string;
   };
   errors: {
     allTribesMustHaveAName: string;

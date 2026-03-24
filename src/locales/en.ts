@@ -63,6 +63,56 @@ const en: AppText = {
     simulatedScoreEvolutionSubtitle:
       "Score growth from now until the end of Day 3, using the simulated ownership.",
   },
+  home: {
+    title: "Phoenix Veritas toolkit",
+    subtitle: "Choose a tool and keep the same language across the whole app.",
+    gvgEyebrow: "GvG",
+    gvgTitle: "GvG score simulator",
+    gvgDescription:
+      "Configure the tribes, current points and ruin ownership, then project the end-of-day result.",
+    gvgButton: "Open GvG",
+    enemyEyebrow: "Analysis",
+    enemyTitle: "Enemy tribe analysis",
+    enemyDescription:
+      "Scan screenshots, detect the main army type and sort enemy chiefs by might.",
+    enemyButton: "Open analysis",
+  },
+  enemyAnalysis: {
+    title: "Scan a folder of Fate War screenshots",
+    subtitle:
+      "The analyzer reads the chief name, both might values and the decisive artifact slots.",
+    inputEyebrow: "Input",
+    inputTitle: "Folder selection and sort mode",
+    inputSubtitle:
+      "Select a folder with screenshots from the same in-game page.",
+    screenshotFolder: "Screenshot folder",
+    chooseFolder: "Click here to choose the screenshots folder",
+    chooseFolderHelp:
+      "Select the folder that contains the Fate War screenshots you want to analyse. The app only reads the files.",
+    selectedFolder: "Selected folder",
+    noFolderSelected: "No folder selected yet",
+    orderBy: "Order enemies by",
+    artifactNote:
+      "Artifact levels are derived from color only: grey 0, green 1, blue 2, purple 3, gold 4, red 5. Rune colors are only used as a tie breaker.",
+    analyzing: "Analyzing",
+    step: "Step",
+    screenshotsAnalyzed: "Screenshots analyzed",
+    archers: "Archers",
+    berserkers: "Berserkers",
+    cavalry: "Cavalry",
+    results: "Results",
+    chiefsClassified: "chiefs classified as",
+    noChiefsClassified: "No chiefs classified as",
+    name: "Name",
+    individualMight: "Individual Might",
+    heroMight: "Hero Might",
+    primaryBuild: "Primary build",
+    confidence: "Confidence",
+    openFolderError: "Could not open the selected folder.",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  },
   errors: {
     allTribesMustHaveAName: "All tribes must have a name.",
     tribeNamesMustBeUnique: "Tribe names must be unique.",

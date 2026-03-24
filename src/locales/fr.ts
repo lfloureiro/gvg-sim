@@ -64,6 +64,56 @@ const fr: AppText = {
     simulatedScoreEvolutionSubtitle:
       "Croissance du score à partir de maintenant jusqu'à la fin du Jour 3, en utilisant la possession simulée.",
   },
+  home: {
+    title: "Outils Phoenix Veritas",
+    subtitle: "Choisissez un outil et gardez la même langue dans toute l'application.",
+    gvgEyebrow: "GvG",
+    gvgTitle: "Simulateur de score GvG",
+    gvgDescription:
+      "Configurez les tribus, les points actuels et la possession des ruines, puis projetez le résultat final de la journée.",
+    gvgButton: "Ouvrir GvG",
+    enemyEyebrow: "Analyse",
+    enemyTitle: "Analyse de tribu ennemie",
+    enemyDescription:
+      "Lisez les captures, détectez le type principal d'armée et triez les chefs ennemis par puissance.",
+    enemyButton: "Ouvrir l'analyse",
+  },
+  enemyAnalysis: {
+    title: "Analyser un dossier de captures Fate War",
+    subtitle:
+      "L'analyseur lit le nom du chef, les deux valeurs de puissance et les emplacements décisifs des artefacts.",
+    inputEyebrow: "Entrée",
+    inputTitle: "Sélection du dossier et tri",
+    inputSubtitle:
+      "Sélectionnez un dossier contenant des captures de la même page du jeu.",
+    screenshotFolder: "Dossier des captures",
+    chooseFolder: "Cliquez ici pour choisir le dossier des captures",
+    chooseFolderHelp:
+      "Sélectionnez le dossier contenant les captures Fate War à analyser. L'application lit seulement les fichiers.",
+    selectedFolder: "Dossier sélectionné",
+    noFolderSelected: "Aucun dossier sélectionné",
+    orderBy: "Trier les ennemis par",
+    artifactNote:
+      "Les niveaux des artefacts sont déduits uniquement de la couleur : gris 0, vert 1, bleu 2, violet 3, or 4, rouge 5. Les couleurs des runes ne servent qu'en cas d'égalité.",
+    analyzing: "Analyse en cours",
+    step: "Étape",
+    screenshotsAnalyzed: "Captures analysées",
+    archers: "Archers",
+    berserkers: "Berserkers",
+    cavalry: "Cavalry",
+    results: "Résultats",
+    chiefsClassified: "chefs classés comme",
+    noChiefsClassified: "Aucun chef classé comme",
+    name: "Nom",
+    individualMight: "Individual Might",
+    heroMight: "Hero Might",
+    primaryBuild: "Build principal",
+    confidence: "Confiance",
+    openFolderError: "Impossible d'ouvrir le dossier sélectionné.",
+    high: "Élevée",
+    medium: "Moyenne",
+    low: "Faible",
+  },
   errors: {
     allTribesMustHaveAName: "Toutes les tribus doivent avoir un nom.",
     tribeNamesMustBeUnique: "Les noms des tribus doivent être uniques.",

@@ -64,6 +64,56 @@ const ru: AppText = {
     simulatedScoreEvolutionSubtitle:
       "Рост очков с текущего момента до конца Дня 3 на основе симулированного владения.",
   },
+  home: {
+    title: "Инструменты Phoenix Veritas",
+    subtitle: "Выберите инструмент и используйте один и тот же язык во всём приложении.",
+    gvgEyebrow: "GvG",
+    gvgTitle: "Симулятор очков GvG",
+    gvgDescription:
+      "Настройте племена, текущие очки и владение руинами, затем посмотрите итоговый прогноз дня.",
+    gvgButton: "Открыть GvG",
+    enemyEyebrow: "Анализ",
+    enemyTitle: "Анализ вражеского племени",
+    enemyDescription:
+      "Считывайте скриншоты, определяйте основной тип армии и сортируйте вражеских вождей по силе.",
+    enemyButton: "Открыть анализ",
+  },
+  enemyAnalysis: {
+    title: "Анализ папки со скриншотами Fate War",
+    subtitle:
+      "Анализатор считывает имя вождя, оба значения силы и ключевые слоты артефактов.",
+    inputEyebrow: "Ввод",
+    inputTitle: "Выбор папки и режим сортировки",
+    inputSubtitle:
+      "Выберите папку со скриншотами одной и той же страницы игры.",
+    screenshotFolder: "Папка со скриншотами",
+    chooseFolder: "Нажмите здесь, чтобы выбрать папку со скриншотами",
+    chooseFolderHelp:
+      "Выберите папку со скриншотами Fate War для анализа. Приложение только читает файлы.",
+    selectedFolder: "Выбранная папка",
+    noFolderSelected: "Папка ещё не выбрана",
+    orderBy: "Сортировать врагов по",
+    artifactNote:
+      "Уровни артефактов определяются только по цвету: серый 0, зелёный 1, синий 2, фиолетовый 3, золотой 4, красный 5. Цвета рун используются только при равенстве.",
+    analyzing: "Анализ",
+    step: "Шаг",
+    screenshotsAnalyzed: "Скриншотов проанализировано",
+    archers: "Archers",
+    berserkers: "Berserkers",
+    cavalry: "Cavalry",
+    results: "Результаты",
+    chiefsClassified: "вождей классифицировано как",
+    noChiefsClassified: "Нет вождей, классифицированных как",
+    name: "Имя",
+    individualMight: "Individual Might",
+    heroMight: "Hero Might",
+    primaryBuild: "Основной билд",
+    confidence: "Уверенность",
+    openFolderError: "Не удалось открыть выбранную папку.",
+    high: "Высокая",
+    medium: "Средняя",
+    low: "Низкая",
+  },
   errors: {
     allTribesMustHaveAName: "У всех племён должно быть название.",
     tribeNamesMustBeUnique: "Названия племён должны быть уникальными.",

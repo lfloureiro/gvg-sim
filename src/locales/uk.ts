@@ -64,6 +64,56 @@ const uk: AppText = {
     simulatedScoreEvolutionSubtitle:
       "Зростання очок від цього моменту до кінця Дня 3 на основі симульованого володіння.",
   },
+  home: {
+    title: "Інструменти Phoenix Veritas",
+    subtitle: "Оберіть інструмент і збережіть одну мову в усьому застосунку.",
+    gvgEyebrow: "GvG",
+    gvgTitle: "Симулятор очок GvG",
+    gvgDescription:
+      "Налаштуйте племена, поточні очки та володіння руїнами, а потім перегляньте підсумковий прогноз дня.",
+    gvgButton: "Відкрити GvG",
+    enemyEyebrow: "Аналіз",
+    enemyTitle: "Аналіз ворожого племені",
+    enemyDescription:
+      "Зчитуйте скріншоти, визначайте основний тип армії та сортуйте ворожих вождів за силою.",
+    enemyButton: "Відкрити аналіз",
+  },
+  enemyAnalysis: {
+    title: "Аналіз папки зі скріншотами Fate War",
+    subtitle:
+      "Аналізатор зчитує ім'я вождя, обидва значення сили та ключові слоти артефактів.",
+    inputEyebrow: "Ввід",
+    inputTitle: "Вибір папки та режим сортування",
+    inputSubtitle:
+      "Виберіть папку зі скріншотами однієї й тієї самої сторінки гри.",
+    screenshotFolder: "Папка зі скріншотами",
+    chooseFolder: "Натисніть тут, щоб вибрати папку зі скріншотами",
+    chooseFolderHelp:
+      "Виберіть папку зі скріншотами Fate War для аналізу. Застосунок лише читає файли.",
+    selectedFolder: "Вибрана папка",
+    noFolderSelected: "Папку ще не вибрано",
+    orderBy: "Сортувати ворогів за",
+    artifactNote:
+      "Рівні артефактів визначаються лише за кольором: сірий 0, зелений 1, синій 2, фіолетовий 3, золотий 4, червоний 5. Кольори рун використовуються лише для розв'язання нічиєї.",
+    analyzing: "Аналіз",
+    step: "Крок",
+    screenshotsAnalyzed: "Скріншотів проаналізовано",
+    archers: "Archers",
+    berserkers: "Berserkers",
+    cavalry: "Cavalry",
+    results: "Результати",
+    chiefsClassified: "вождів класифіковано як",
+    noChiefsClassified: "Немає вождів, класифікованих як",
+    name: "Ім'я",
+    individualMight: "Individual Might",
+    heroMight: "Hero Might",
+    primaryBuild: "Основний білд",
+    confidence: "Впевненість",
+    openFolderError: "Не вдалося відкрити вибрану папку.",
+    high: "Висока",
+    medium: "Середня",
+    low: "Низька",
+  },
   errors: {
     allTribesMustHaveAName: "Усі племена повинні мати назву.",
     tribeNamesMustBeUnique: "Назви племен повинні бути унікальними.",

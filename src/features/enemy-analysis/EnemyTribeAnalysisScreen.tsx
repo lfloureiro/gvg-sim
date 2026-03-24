@@ -1,16 +1,18 @@
 import { useMemo, useState, type ChangeEvent } from "react";
+import { getTranslation } from "../../i18n";
+import type { Language } from "../../types";
 import {
   analyzeEnemyImages,
   countByArmyType,
-  formatConfidence,
   formatNumber,
   getPrimarySlotSummary,
   groupRowsByArmy,
   type AnalysisProgress,
+  type ArmyType,
+  type Confidence,
   type EnemyAnalysisRow,
   type SortField,
 } from "./analysis";
-import type { Language } from "../../types";
 
 type EnemyTribeAnalysisScreenProps = {
   onBack: () => void;
@@ -23,30 +25,38 @@ type DirectoryFile = File & {
 
 type PickedFile = {
   file: File;
-  handle?: FileSystemFileHandle;
 };
 
 type BrowserWindowWithDirectoryPicker = Window & {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 };
 
-const SORT_OPTIONS: Array<{
-  value: SortField;
-  label: string;
-}> = [
-  { value: "heroMight", label: "Hero Might" },
-  { value: "individualMight", label: "Individual Might" },
-];
-
 export default function EnemyTribeAnalysisScreen({
   onBack,
+  language,
 }: EnemyTribeAnalysisScreenProps) {
+  const t = getTranslation(language);
+
   const [sortField, setSortField] = useState<SortField>("individualMight");
   const [rows, setRows] = useState<EnemyAnalysisRow[]>([]);
   const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [error, setError] = useState("");
   const [selectedFolderLabel, setSelectedFolderLabel] = useState("");
   const [fallbackPickerKey, setFallbackPickerKey] = useState(0);
+
+  const sortOptions = useMemo(
+    () => [
+      {
+        value: "individualMight" as SortField,
+        label: t.enemyAnalysis.individualMight,
+      },
+      {
+        value: "heroMight" as SortField,
+        label: t.enemyAnalysis.heroMight,
+      },
+    ],
+    [t]
+  );
 
   const supportsDirectoryPicker =
     typeof window !== "undefined" &&
@@ -73,6 +83,7 @@ export default function EnemyTribeAnalysisScreen({
       const orderedFiles = [...files].sort((left, right) =>
         left.file.name.localeCompare(right.file.name)
       );
+
       const results = await analyzeEnemyImages(
         orderedFiles.map((entry) => entry.file),
         (nextProgress) => {
@@ -82,7 +93,7 @@ export default function EnemyTribeAnalysisScreen({
 
       setRows(results);
     } catch {
-      setError("Could not analyze the selected folder.");
+      setError(t.enemyAnalysis.openFolderError);
     } finally {
       setProgress(null);
     }
@@ -108,7 +119,7 @@ export default function EnemyTribeAnalysisScreen({
       const files = await readImageFilesFromDirectory(directoryHandle);
       await runAnalysis(files, directoryHandle.name);
     } catch {
-      setError("Could not open the selected folder.");
+      setError(t.enemyAnalysis.openFolderError);
     }
   }
 
@@ -116,6 +127,7 @@ export default function EnemyTribeAnalysisScreen({
     event: ChangeEvent<HTMLInputElement>
   ) {
     const rawFiles = Array.from(event.target.files ?? []) as DirectoryFile[];
+
     const files = rawFiles
       .filter((file) => file.type.startsWith("image/"))
       .map((file) => ({ file }));
@@ -125,7 +137,8 @@ export default function EnemyTribeAnalysisScreen({
     }
 
     const folderName =
-      rawFiles[0]?.webkitRelativePath?.split("/")[0] ?? `${files.length} images`;
+      rawFiles[0]?.webkitRelativePath?.split("/")[0] ??
+      `${files.length} images`;
 
     await runAnalysis(files, folderName);
     event.target.value = "";
@@ -135,25 +148,23 @@ export default function EnemyTribeAnalysisScreen({
     <div className="stack">
       <div className="app-top-actions">
         <button className="secondary-button" onClick={onBack}>
-          ← Back to home
+          ← {t.common.back}
         </button>
       </div>
 
       <section className="phoenix-banner mode-banner phoenix-banner-with-watermark">
         <div className="phoenix-banner-inner phoenix-banner-grid">
           <div>
-            <p className="phoenix-kicker">Enemy tribe analysis</p>
-            <h1 className="phoenix-title">Scan a folder of Fate War screenshots</h1>
-            <p className="phoenix-subtitle">
-              The analyzer reads the chief name, both might values and the six
-              decisive artifact slots. Artifact color is the main signal. Rune
-              colors are only used as a tie breaker.
-            </p>
+            <p className="phoenix-kicker">{t.home.enemyEyebrow}</p>
+            <h1 className="phoenix-title">{t.enemyAnalysis.title}</h1>
+            <p className="phoenix-subtitle">{t.enemyAnalysis.subtitle}</p>
           </div>
 
           <div className="banner-watermark-block" aria-hidden="true">
             <div className="banner-watermark-title">PHOENIX VERITAS</div>
-            <div className="banner-watermark-motto">FORGED IN FIRE, UNITED IN TRUTH.</div>
+            <div className="banner-watermark-motto">
+              FORGED IN FIRE, UNITED IN TRUTH.
+            </div>
           </div>
         </div>
       </section>
@@ -161,35 +172,32 @@ export default function EnemyTribeAnalysisScreen({
       <section className="card">
         <div className="card-header">
           <div>
-            <p className="eyebrow">Input</p>
-            <h2>Folder selection and sort mode</h2>
-            <p className="muted">
-              Select a folder with screenshots from the same in-game page. This
-              version expects the slot positions to stay fixed across all images.
-            </p>
+            <p className="eyebrow">{t.enemyAnalysis.inputEyebrow}</p>
+            <h2>{t.enemyAnalysis.inputTitle}</h2>
+            <p className="muted">{t.enemyAnalysis.inputSubtitle}</p>
           </div>
         </div>
 
         <div className="analysis-controls">
           <div className="field">
-            <span>Screenshot folder</span>
+            <span>{t.enemyAnalysis.screenshotFolder}</span>
+
             <button
               className="folder-picker-button"
               type="button"
               onClick={handleChooseFolder}
             >
-              <strong>📁 Click here to choose the screenshots folder</strong>
-              <small>
-                Select the folder that contains the Fate War screenshots you want to analyse.
-                The app will only read the files. It will not move or delete them.
-              </small>
+              <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
+
+              <small>{t.enemyAnalysis.chooseFolderHelp}</small>
+
               {selectedFolderLabel ? (
                 <span className="folder-picker-selected">
-                  Selected folder: {selectedFolderLabel}
+                  {t.enemyAnalysis.selectedFolder}: {selectedFolderLabel}
                 </span>
               ) : (
                 <span className="folder-picker-selected">
-                  No folder selected yet
+                  {t.enemyAnalysis.noFolderSelected}
                 </span>
               )}
             </button>
@@ -209,19 +217,22 @@ export default function EnemyTribeAnalysisScreen({
                     }
                   }}
                 />
-                <strong>Fallback folder picker</strong>
-                <small>Use this only if the main button is not available in your browser.</small>
+                <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
+                <small>{t.enemyAnalysis.chooseFolderHelp}</small>
               </label>
             ) : null}
           </div>
 
           <div className="field">
-            <span>Order enemies by</span>
+            <span>{t.enemyAnalysis.orderBy}</span>
+
             <select
               value={sortField}
-              onChange={(event) => setSortField(event.target.value as SortField)}
+              onChange={(event) =>
+                setSortField(event.target.value as SortField)
+              }
             >
-              {SORT_OPTIONS.map((option) => (
+              {sortOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -231,19 +242,15 @@ export default function EnemyTribeAnalysisScreen({
         </div>
 
         <div className="note-box compact-note-box">
-          Artifact weights: grey 0, green 10, blue 20, purple 30, gold 40, red
-          50. Primary slots: Archers = sword + helmet, Berserkers = shield +
-          chest, Cavalry = boots + pants. Rune colors are only used as a tie
-          breaker. If the level OCR fails, the analyzer now forces the minimum
-          valid level for the detected artifact color so it avoids impossible
-          outputs such as Gold Lv.0 or Red Lv.0.
+          {t.enemyAnalysis.artifactNote}
         </div>
 
         {progress ? (
           <div className="note-box">
-            Analyzing {progress.current}/{progress.total}: <strong>{progress.fileName}</strong>
+            {t.enemyAnalysis.analyzing} {progress.current}/{progress.total}:{" "}
+            <strong>{progress.fileName}</strong>
             <br />
-            Step: {progress.step}
+            {t.enemyAnalysis.step}: {progress.step}
           </div>
         ) : null}
 
@@ -254,78 +261,112 @@ export default function EnemyTribeAnalysisScreen({
         <>
           <section className="top-grid">
             <div className="info-box">
-              <span className="info-label">Screenshots analyzed</span>
+              <span className="info-label">
+                {t.enemyAnalysis.screenshotsAnalyzed}
+              </span>
               <strong>{rows.length}</strong>
             </div>
 
             <div className="info-box">
-              <span className="info-label">Archers</span>
+              <span className="info-label">{t.enemyAnalysis.archers}</span>
               <strong>{counts.archer}</strong>
             </div>
 
             <div className="info-box">
-              <span className="info-label">Berserkers</span>
+              <span className="info-label">{t.enemyAnalysis.berserkers}</span>
               <strong>{counts.berserker}</strong>
             </div>
 
             <div className="info-box">
-              <span className="info-label">Cavalry</span>
+              <span className="info-label">{t.enemyAnalysis.cavalry}</span>
               <strong>{counts.cavalry}</strong>
             </div>
           </section>
 
-          {groupedRows.map((group) => (
-            <section className="card" key={group.armyType}>
-              <div className="card-header">
-                <div>
-                  <p className="eyebrow">Results</p>
-                  <h2>{group.label}</h2>
-                  <p className="muted">
-                    {group.rows.length
-                      ? `${group.rows.length} chiefs classified as ${group.label}.`
-                      : `No chiefs classified as ${group.label} in the current folder.`}
-                  </p>
-                </div>
-              </div>
+          {groupedRows.map((group) => {
+            const localizedArmyLabel = getArmyLabel(group.armyType, t);
 
-              {group.rows.length ? (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Individual Might</th>
-                        <th>Hero Might</th>
-                        <th>Primary build</th>
-                        <th>Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.rows.map((row) => (
-                        <tr key={`${group.armyType}-${row.fileName}`}>
-                          <td className="tribe-name-cell">{row.chiefName}</td>
-                          <td>{formatNumber(row.individualMight)}</td>
-                          <td>{formatNumber(row.heroMight)}</td>
-                          <td>{getPrimarySlotSummary(row)}</td>
-                          <td>
-                            <span
-                              className={`confidence-pill confidence-${row.confidence}`}
-                            >
-                              {formatConfidence(row.confidence)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            return (
+              <section className="card" key={group.armyType}>
+                <div className="card-header">
+                  <div>
+                    <p className="eyebrow">{t.enemyAnalysis.results}</p>
+                    <h2>{localizedArmyLabel}</h2>
+                    <p className="muted">
+                      {group.rows.length
+                        ? `${group.rows.length} ${t.enemyAnalysis.chiefsClassified} ${localizedArmyLabel}.`
+                        : `${t.enemyAnalysis.noChiefsClassified} ${localizedArmyLabel}.`}
+                    </p>
+                  </div>
                 </div>
-              ) : null}
-            </section>
-          ))}
+
+                {group.rows.length ? (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>{t.enemyAnalysis.name}</th>
+                          <th>{t.enemyAnalysis.individualMight}</th>
+                          <th>{t.enemyAnalysis.heroMight}</th>
+                          <th>{t.enemyAnalysis.primaryBuild}</th>
+                          <th>{t.enemyAnalysis.confidence}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.rows.map((row) => (
+                          <tr key={`${group.armyType}-${row.fileName}`}>
+                            <td className="tribe-name-cell">{row.chiefName}</td>
+                            <td>{formatNumber(row.individualMight)}</td>
+                            <td>{formatNumber(row.heroMight)}</td>
+                            <td>{getPrimarySlotSummary(row)}</td>
+                            <td>
+                              <span
+                                className={`confidence-pill confidence-${row.confidence}`}
+                              >
+                                {getConfidenceLabel(row.confidence, t)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </>
       ) : null}
     </div>
   );
+}
+
+function getArmyLabel(
+  armyType: ArmyType,
+  t: ReturnType<typeof getTranslation>
+) {
+  switch (armyType) {
+    case "archer":
+      return t.enemyAnalysis.archers;
+    case "berserker":
+      return t.enemyAnalysis.berserkers;
+    case "cavalry":
+      return t.enemyAnalysis.cavalry;
+  }
+}
+
+function getConfidenceLabel(
+  confidence: Confidence,
+  t: ReturnType<typeof getTranslation>
+) {
+  switch (confidence) {
+    case "high":
+      return t.enemyAnalysis.high;
+    case "medium":
+      return t.enemyAnalysis.medium;
+    case "low":
+      return t.enemyAnalysis.low;
+  }
 }
 
 async function readImageFilesFromDirectory(
