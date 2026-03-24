@@ -5,8 +5,8 @@
 // - major: mudança grande de lógica/estrutura -> 2.0.0
 
 export const APP_VERSION = {
-  major: 1,
-  minor: 4,
+  major: 2,
+  minor: 0,
   patch: 0,
 } as const;
 

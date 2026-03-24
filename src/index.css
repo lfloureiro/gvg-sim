@@ -311,9 +311,96 @@ h2 {
   font-weight: 700;
 }
 
+.app-top-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.mode-banner {
+  margin-bottom: 0;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.mode-card {
+  display: grid;
+  min-height: 260px;
+}
+
+.mode-card-body {
+  display: grid;
+  align-content: start;
+}
+
+.analysis-controls {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(220px, 0.7fr);
+  gap: 16px;
+}
+
+.folder-picker {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed rgba(96, 165, 250, 0.45);
+  border-radius: 18px;
+  background: rgba(11, 18, 32, 0.8);
+  padding: 16px;
+  color: #e5e7eb;
+}
+
+.folder-picker input {
+  display: none;
+}
+
+.folder-picker strong {
+  font-size: 1rem;
+}
+
+.folder-picker small {
+  color: #94a3b8;
+}
+
+.confidence-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.confidence-high {
+  background: rgba(22, 163, 74, 0.18);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: #bbf7d0;
+}
+
+.confidence-medium {
+  background: rgba(234, 179, 8, 0.18);
+  border: 1px solid rgba(253, 224, 71, 0.35);
+  color: #fef08a;
+}
+
+.confidence-low {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
 @media (max-width: 1100px) {
   .tribe-setup-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .mode-grid,
+  .analysis-controls {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -336,5 +423,103 @@ h2 {
 
   h1 {
     font-size: 1.45rem;
+  }
+}
+
+.phoenix-banner-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 18px;
+  align-items: start;
+}
+
+.home-banner-side {
+  display: grid;
+  gap: 14px;
+  justify-items: stretch;
+}
+
+.home-language-field {
+  max-width: 220px;
+  justify-self: end;
+}
+
+.banner-watermark-block {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+  opacity: 0.18;
+  user-select: none;
+}
+
+.banner-watermark-title {
+  font-size: clamp(2.2rem, 4vw, 4.6rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 0.9;
+}
+
+.banner-watermark-motto {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.folder-picker-button {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px dashed rgba(96, 165, 250, 0.45);
+  border-radius: 18px;
+  background: rgba(11, 18, 32, 0.8);
+  padding: 18px 20px;
+  color: #e5e7eb;
+}
+
+.folder-picker-button:hover {
+  border-color: rgba(147, 197, 253, 0.8);
+  background: rgba(15, 23, 42, 0.94);
+}
+
+.folder-picker-button strong {
+  font-size: 1.05rem;
+}
+
+.folder-picker-button small,
+.folder-picker-selected {
+  color: #94a3b8;
+}
+
+.folder-picker-fallback {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+}
+
+.folder-picker-fallback input {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.compact-note-box {
+  margin-top: 14px;
+}
+
+@media (max-width: 1100px) {
+  .phoenix-banner-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-language-field,
+  .banner-watermark-block {
+    justify-self: start;
+    text-align: left;
+    justify-items: start;
   }
 }
