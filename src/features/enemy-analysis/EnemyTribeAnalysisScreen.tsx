@@ -13,6 +13,7 @@ import {
   type EnemyAnalysisRow,
   type SortField,
 } from "./analysis";
+import EnemyTribeDebugScreen from "./EnemyTribeDebugScreen";
 
 type EnemyTribeAnalysisScreenProps = {
   onBack: () => void;
@@ -37,26 +38,13 @@ export default function EnemyTribeAnalysisScreen({
 }: EnemyTribeAnalysisScreenProps) {
   const t = getTranslation(language);
 
-  const [sortField, setSortField] = useState<SortField>("individualMight");
+  const sortField: SortField = "individualMight";
   const [rows, setRows] = useState<EnemyAnalysisRow[]>([]);
   const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [error, setError] = useState("");
   const [selectedFolderLabel, setSelectedFolderLabel] = useState("");
   const [fallbackPickerKey, setFallbackPickerKey] = useState(0);
-
-  const sortOptions = useMemo(
-    () => [
-      {
-        value: "individualMight" as SortField,
-        label: t.enemyAnalysis.individualMight,
-      },
-      {
-        value: "heroMight" as SortField,
-        label: t.enemyAnalysis.heroMight,
-      },
-    ],
-    [t]
-  );
+  const [showDebug, setShowDebug] = useState(false);
 
   const supportsDirectoryPicker =
     typeof window !== "undefined" &&
@@ -151,6 +139,13 @@ export default function EnemyTribeAnalysisScreen({
           ← {t.common.back}
         </button>
 
+        <button
+          className="secondary-button"
+          onClick={() => setShowDebug((value) => !value)}
+        >
+          {showDebug ? "Hide debug" : "Debug single image"}
+        </button>
+
         {rows.length ? (
           <button
             className="primary-button"
@@ -184,6 +179,8 @@ export default function EnemyTribeAnalysisScreen({
           </div>
         </div>
       </section>
+
+      {showDebug ? <EnemyTribeDebugScreen language={language} /> : null}
 
       <section className="card">
         <div className="card-header">
@@ -239,22 +236,7 @@ export default function EnemyTribeAnalysisScreen({
             ) : null}
           </div>
 
-          <div className="field">
-            <span>{t.enemyAnalysis.orderBy}</span>
 
-            <select
-              value={sortField}
-              onChange={(event) =>
-                setSortField(event.target.value as SortField)
-              }
-            >
-              {sortOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         <div className="note-box compact-note-box">
@@ -323,7 +305,6 @@ export default function EnemyTribeAnalysisScreen({
                         <tr>
                           <th>{t.enemyAnalysis.name}</th>
                           <th>{t.enemyAnalysis.individualMight}</th>
-                          <th>{t.enemyAnalysis.heroMight}</th>
                           <th>{t.enemyAnalysis.primaryBuild}</th>
                           <th>{t.enemyAnalysis.confidence}</th>
                         </tr>
@@ -333,7 +314,6 @@ export default function EnemyTribeAnalysisScreen({
                           <tr key={`${group.armyType}-${row.fileName}`}>
                             <td className="tribe-name-cell">{row.chiefName}</td>
                             <td>{formatNumber(row.individualMight)}</td>
-                            <td>{formatNumber(row.heroMight)}</td>
                             <td>{getPrimarySlotSummary(row)}</td>
                             <td>
                               <span
@@ -462,7 +442,7 @@ function buildEnemyAnalysisTextReport(
 
     for (const row of group.rows) {
       sections.push(
-        `- ${row.chiefName} | IM: ${formatNumber(row.individualMight)} | HM: ${formatNumber(row.heroMight)} | Build: ${getPrimarySlotSummary(row)} | ${t.enemyAnalysis.confidence}: ${getConfidenceLabel(row.confidence, t)}`
+        `- ${row.chiefName} | IM: ${formatNumber(row.individualMight)} | Build: ${getPrimarySlotSummary(row)} | ${t.enemyAnalysis.confidence}: ${getConfidenceLabel(row.confidence, t)}`
       );
     }
 

@@ -51,11 +51,70 @@ type GroupedRows = {
   rows: EnemyAnalysisRow[];
 };
 
+type OCRWord = {
+  text: string;
+  confidence: number;
+};
+
+type OCRResultLite = {
+  text: string;
+  words: OCRWord[];
+};
+
+type NameCandidate = {
+  value: string;
+  weight: number;
+};
+
+export type PixelRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type PixelCircle = {
+  cx: number;
+  cy: number;
+  r: number;
+  score: number;
+};
+
 type NormalizedRegion = {
   x: number;
   y: number;
   width: number;
   height: number;
+};
+
+export type LayoutModel = {
+  topInfoRect: PixelRect;
+  artifactTitleRect: PixelRect;
+  artifactGridRect: PixelRect;
+  slotRects: Record<ArtifactSlotKey, PixelRect>;
+  artifactCircles: Partial<Record<ArtifactSlotKey, PixelCircle>>;
+};
+
+export type DebugCropResult = {
+  id: string;
+  label: string;
+  imageUrl: string;
+  meta?: string;
+};
+
+export type DebugAnalysisResult = {
+  fileName: string;
+  imageUrl: string;
+  imageWidth: number;
+  imageHeight: number;
+  layout: LayoutModel;
+  chiefName: string;
+  individualMight: number;
+  heroMight: number;
+  armyType: ArmyType;
+  confidence: Confidence;
+  slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
+  crops: DebugCropResult[];
 };
 
 const OCR_LANGUAGE = "eng";
@@ -78,54 +137,6 @@ const LEVEL_BY_ARTIFACT_COLOR: Record<ArtifactColor, number> = {
   red: 5,
 };
 
-type ArtifactPanelAnchor = {
-  left: number;
-  top: number;
-  slotWidth: number;
-  slotHeight: number;
-  colGap: number;
-  rowGap: number;
-};
-
-const TITLE_SEARCH_REGION: NormalizedRegion = {
-  x: 0.685,
-  y: 0.335,
-  width: 0.305,
-  height: 0.125,
-};
-
-const SLOT_GRID_POSITION: Record<
-  ArtifactSlotKey,
-  { col: number; row: number }
-> = {
-  sword: { col: 0, row: 0 },
-  shield: { col: 1, row: 0 },
-  boots: { col: 2, row: 0 },
-  chest: { col: 0, row: 1 },
-  helmet: { col: 1, row: 1 },
-  pants: { col: 0, row: 2 },
-};
-
-const NAME_REGIONS: NormalizedRegion[] = [
-  { x: 0.760, y: 0.035, width: 0.185, height: 0.086 },
-  { x: 0.768, y: 0.040, width: 0.175, height: 0.080 },
-  { x: 0.752, y: 0.030, width: 0.195, height: 0.092 },
-];
-
-const INDIVIDUAL_MIGHT_REGION: NormalizedRegion = {
-  x: 0.811,
-  y: 0.116,
-  width: 0.125,
-  height: 0.058,
-};
-
-const HERO_MIGHT_REGION: NormalizedRegion = {
-  x: 0.811,
-  y: 0.176,
-  width: 0.125,
-  height: 0.058,
-};
-
 const ARMY_ORDER: ArmyType[] = ["archer", "berserker", "cavalry"];
 
 const ARMY_LABELS: Record<ArmyType, string> = {
@@ -139,6 +150,189 @@ const PRIMARY_SLOTS: Record<ArmyType, [ArtifactSlotKey, ArtifactSlotKey]> = {
   berserker: ["shield", "chest"],
   cavalry: ["boots", "pants"],
 };
+
+const SLOT_ORDER: ArtifactSlotKey[] = [
+  "sword",
+  "shield",
+  "boots",
+  "chest",
+  "helmet",
+  "pants",
+];
+
+const ARTIFACT_TITLE_SEARCH_REGIONS: NormalizedRegion[] = [
+  { x: 0.62, y: 0.32, width: 0.36, height: 0.20 },
+  { x: 0.52, y: 0.30, width: 0.46, height: 0.24 },
+  { x: 0.42, y: 0.30, width: 0.56, height: 0.26 },
+  { x: 0.30, y: 0.28, width: 0.68, height: 0.30 },
+];
+
+type ArtifactSearchTarget = {
+  slot: ArtifactSlotKey | "ignore";
+  row: number;
+  col: number;
+};
+
+const ARTIFACT_SEARCH_TARGETS: ArtifactSearchTarget[] = [
+  { slot: "sword", row: 0, col: 0 },
+  { slot: "shield", row: 0, col: 1 },
+  { slot: "boots", row: 0, col: 2 },
+
+  { slot: "chest", row: 1, col: 0 },
+  { slot: "helmet", row: 1, col: 1 },
+  { slot: "ignore", row: 1, col: 2 },
+
+  { slot: "pants", row: 2, col: 0 },
+  { slot: "ignore", row: 2, col: 1 },
+];
+
+function buildAnalysisCanvas(rootCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  if (rootCanvas.width <= rootCanvas.height * 1.12) {
+    return rootCanvas;
+  }
+
+  const panelStartX = findRightPanelStartX(rootCanvas);
+
+  return cropPixels(
+    rootCanvas,
+    panelStartX,
+    0,
+    rootCanvas.width - panelStartX,
+    rootCanvas.height
+  );
+}
+
+function findRightPanelStartX(rootCanvas: HTMLCanvasElement): number {
+  const context = rootCanvas.getContext("2d");
+
+  if (!context) {
+    return Math.floor(rootCanvas.width * 0.58);
+  }
+
+  const { width, height } = rootCanvas;
+  const imageData = context.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  const xStart = Math.floor(width * 0.42);
+  const xEnd = Math.floor(width * 0.82);
+  const yStart = Math.floor(height * 0.04);
+  const yEnd = Math.floor(height * 0.96);
+
+  const darknessScores: number[] = new Array(width).fill(0);
+
+  for (let x = xStart; x < xEnd; x += 1) {
+    let score = 0;
+    let samples = 0;
+
+    for (let y = yStart; y < yEnd; y += 3) {
+      const index = (y * width + x) * 4;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const a = data[index + 3];
+
+      if (a < 20) {
+        continue;
+      }
+
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const { value } = rgbToHsv(r, g, b);
+
+      const darkness =
+        Math.max(0, 150 - luminance) / 150 +
+        Math.max(0, 0.52 - value) * 1.6;
+
+      score += darkness;
+      samples += 1;
+    }
+
+    darknessScores[x] = samples > 0 ? score / samples : 0;
+  }
+
+  const smoothed: number[] = new Array(width).fill(0);
+
+  for (let x = xStart; x < xEnd; x += 1) {
+    let total = 0;
+    let count = 0;
+
+    for (let offset = -8; offset <= 8; offset += 1) {
+      const px = x + offset;
+      if (px < xStart || px >= xEnd) {
+        continue;
+      }
+
+      total += darknessScores[px];
+      count += 1;
+    }
+
+    smoothed[x] = count > 0 ? total / count : darknessScores[x];
+  }
+
+  let bestX = Math.floor(width * 0.58);
+  let bestGain = Number.NEGATIVE_INFINITY;
+
+  for (let x = xStart + 24; x < xEnd - 40; x += 1) {
+    const left = meanArrayRange(smoothed, x - 20, x - 4);
+    const right = meanArrayRange(smoothed, x + 4, x + 36);
+    const gain = right - left;
+
+    if (gain > bestGain) {
+      bestGain = gain;
+      bestX = x;
+    }
+  }
+
+  return clamp(
+    Math.floor(bestX - width * 0.012),
+    Math.floor(width * 0.48),
+    Math.floor(width * 0.74)
+  );
+}
+
+function meanArrayRange(values: number[], start: number, end: number) {
+  let total = 0;
+  let count = 0;
+
+  for (let index = start; index <= end; index += 1) {
+    if (index < 0 || index >= values.length) {
+      continue;
+    }
+
+    total += values[index];
+    count += 1;
+  }
+
+  return count > 0 ? total / count : 0;
+}
+
+function normalizeOcrToken(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+}
+
+function isArtifactTitleToken(value: string) {
+  const token = normalizeOcrToken(value);
+
+  return (
+    token.includes("artifact") ||
+    token.includes("artefact") ||
+    token.includes("artefatto") ||
+    token.includes("artefato")
+  );
+}
+
+function isYellowNamePixel(r: number, g: number, b: number, a: number) {
+  if (a < 20) {
+    return false;
+  }
+
+  const { hue, saturation, value } = rgbToHsv(r, g, b);
+
+  return hue >= 28 && hue <= 68 && saturation >= 0.34 && value >= 0.42;
+}
 
 export async function analyzeEnemyImages(
   files: File[],
@@ -158,6 +352,16 @@ export async function analyzeEnemyImages(
       });
 
       const rootCanvas = await fileToCanvas(file);
+      const analysisCanvas = buildAnalysisCanvas(rootCanvas);
+
+      onProgress?.({
+        current: index + 1,
+        total: files.length,
+        fileName: file.name,
+        step: "Detecting layout",
+      });
+
+      const layout = await detectLayout(analysisCanvas);
 
       onProgress?.({
         current: index + 1,
@@ -166,7 +370,7 @@ export async function analyzeEnemyImages(
         step: "Reading chief name",
       });
 
-      const chiefName = await extractChiefName(rootCanvas);
+      const chiefName = await extractChiefName(analysisCanvas, layout.topInfoRect);
 
       onProgress?.({
         current: index + 1,
@@ -175,10 +379,10 @@ export async function analyzeEnemyImages(
         step: "Reading might values",
       });
 
-      const [individualMight, heroMight] = await Promise.all([
-        extractMight(rootCanvas, INDIVIDUAL_MIGHT_REGION),
-        extractMight(rootCanvas, HERO_MIGHT_REGION),
-      ]);
+      const { individualMight, heroMight } = await extractMightPair(
+        analysisCanvas,
+        layout.topInfoRect
+      );
 
       onProgress?.({
         current: index + 1,
@@ -187,7 +391,7 @@ export async function analyzeEnemyImages(
         step: "Analyzing artifacts",
       });
 
-      const slots = await analyzeSlots(rootCanvas);
+      const slots = analyzeSlots(analysisCanvas, layout);
 
       const armyScores = buildArmyScores(slots);
       const armyType = decideArmyType(armyScores, slots);
@@ -204,11 +408,49 @@ export async function analyzeEnemyImages(
         armyScores,
       });
     } catch {
-      // ignora ficheiros problemáticos e continua
+      // ignora screenshots problemáticos e continua
     }
   }
 
   return rows;
+}
+
+export async function analyzeEnemyImageDebug(
+  file: File
+): Promise<DebugAnalysisResult> {
+  const rootCanvas = await fileToCanvas(file);
+  const analysisCanvas = buildAnalysisCanvas(rootCanvas);
+  const layout = await detectLayout(analysisCanvas);
+  const chiefName = await extractChiefName(analysisCanvas, layout.topInfoRect);
+  const { individualMight, heroMight } = await extractMightPair(
+    analysisCanvas,
+    layout.topInfoRect
+  );
+  const slots = analyzeSlots(analysisCanvas, layout);
+  const armyScores = buildArmyScores(slots);
+  const armyType = decideArmyType(armyScores, slots);
+  const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
+
+  return {
+    fileName: file.name,
+    imageUrl: canvasToDataUrl(analysisCanvas),
+    imageWidth: analysisCanvas.width,
+    imageHeight: analysisCanvas.height,
+    layout,
+    chiefName,
+    individualMight,
+    heroMight,
+    armyType,
+    confidence,
+    slots,
+    crops: buildDebugCrops(
+      analysisCanvas,
+      layout,
+      chiefName,
+      individualMight,
+      slots
+    ),
+  };
 }
 
 export function groupRowsByArmy(
@@ -281,137 +523,1694 @@ function compareRows(
   return left.chiefName.localeCompare(right.chiefName);
 }
 
-async function analyzeSlots(
+async function detectLayout(rootCanvas: HTMLCanvasElement): Promise<LayoutModel> {
+  const artifactTitleRect = await findArtifactTitleRect(rootCanvas);
+  const artifactGridRect = buildArtifactGridRect(rootCanvas, artifactTitleRect);
+  const artifactCircles = detectArtifactCircles(rootCanvas, artifactGridRect);
+  const slotRects = buildSlotRects(rootCanvas, artifactGridRect, artifactCircles);
+  const topInfoRect = buildTopInfoRect(rootCanvas, artifactTitleRect);
+
+  return {
+    topInfoRect,
+    artifactTitleRect,
+    artifactGridRect,
+    slotRects,
+    artifactCircles,
+  };
+}
+
+async function findArtifactTitleRect(
   rootCanvas: HTMLCanvasElement
-): Promise<Record<ArtifactSlotKey, ArtifactSlotAnalysis>> {
-  const anchor = await findArtifactPanelAnchor(rootCanvas);
+): Promise<PixelRect> {
+  const rootWidth = rootCanvas.width;
+  const rootHeight = rootCanvas.height;
 
-  const entries = await Promise.all(
-    (Object.keys(SLOT_GRID_POSITION) as ArtifactSlotKey[]).map(async (slot) => {
-      const slotCanvas = cropSlotFromAnchor(rootCanvas, anchor, slot);
-      const color = detectArtifactColor(slotCanvas, slot);
-      const runeColor = detectRuneColor(slotCanvas);
-      const level = LEVEL_BY_ARTIFACT_COLOR[color];
+  const portraitRegions: NormalizedRegion[] = [
+    { x: 0.00, y: 0.26, width: 0.98, height: 0.18 },
+    { x: 0.00, y: 0.22, width: 0.98, height: 0.24 },
+    { x: 0.00, y: 0.30, width: 0.98, height: 0.16 },
+  ];
 
-      return [
-        slot,
-        {
-          slot,
-          color,
-          level,
-          runeColor,
-          score: COLOR_WEIGHTS[color] * 100 + level,
-          runeScore: COLOR_WEIGHTS[runeColor],
-        },
-      ] as const;
+  const searchRegions =
+    rootWidth < rootHeight
+      ? portraitRegions
+      : ARTIFACT_TITLE_SEARCH_REGIONS;
+
+  for (const region of searchRegions) {
+    const crop = cropNormalized(rootCanvas, region);
+    const prepared = upscaleCanvas(buildWhiteTextCanvas(crop), 3);
+
+    try {
+      const result = await Tesseract.recognize(prepared, OCR_LANGUAGE, {
+        tessedit_pageseg_mode: "6",
+        tessedit_char_whitelist:
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ",
+      } as never);
+
+      const words = (result.data.words ?? []) as Array<{
+        text: string;
+        bbox: { x0: number; y0: number; x1: number; y1: number };
+      }>;
+
+      const titleWord = words.find((word) => isArtifactTitleToken(word.text ?? ""));
+
+      if (titleWord) {
+        const cropX = region.x * rootWidth;
+        const cropY = region.y * rootHeight;
+        const scale = 3;
+
+        const x = cropX + titleWord.bbox.x0 / scale;
+        const y = cropY + titleWord.bbox.y0 / scale;
+        const width = (titleWord.bbox.x1 - titleWord.bbox.x0) / scale;
+        const height = (titleWord.bbox.y1 - titleWord.bbox.y0) / scale;
+
+        return {
+          x: Math.max(x - rootWidth * 0.06, 0),
+          y: Math.max(y - rootHeight * 0.01, 0),
+          width: Math.min(width + rootWidth * 0.18, rootWidth * 0.52),
+          height: Math.max(height + rootHeight * 0.02, rootHeight * 0.05),
+        };
+      }
+    } catch {
+      // tenta a região seguinte
+    }
+  }
+
+  return rootWidth < rootHeight
+    ? {
+        x: rootWidth * 0.02,
+        y: rootHeight * 0.34,
+        width: rootWidth * 0.92,
+        height: rootHeight * 0.06,
+      }
+    : {
+        x: rootWidth * 0.58,
+        y: rootHeight * 0.39,
+        width: rootWidth * 0.33,
+        height: rootHeight * 0.07,
+      };
+}
+
+function buildArtifactGridRect(
+  rootCanvas: HTMLCanvasElement,
+  titleRect: PixelRect
+): PixelRect {
+  const rootWidth = rootCanvas.width;
+  const rootHeight = rootCanvas.height;
+
+  const x = clamp(
+    Math.min(titleRect.x - rootWidth * 0.01, rootWidth * 0.05),
+    rootWidth * 0.02,
+    rootWidth * 0.08
+  );
+
+  const y = clamp(
+    titleRect.y + titleRect.height + rootHeight * 0.008,
+    0,
+    rootHeight * 0.90
+  );
+
+  const right = clamp(
+    rootWidth - rootWidth * 0.035,
+    x + rootWidth * 0.78,
+    rootWidth
+  );
+
+  const bottom = clamp(
+    rootHeight - rootHeight * 0.02,
+    y + rootHeight * 0.24,
+    rootHeight
+  );
+
+  return {
+    x,
+    y,
+    width: right - x,
+    height: bottom - y,
+  };
+}
+
+function buildSlotRects(
+  rootCanvas: HTMLCanvasElement,
+  gridRect: PixelRect,
+  artifactCircles: Partial<Record<ArtifactSlotKey, PixelCircle>> = {}
+): Record<ArtifactSlotKey, PixelRect> {
+  void rootCanvas;
+
+  const cellWidth = gridRect.width / 3;
+  const cellHeight = gridRect.height / 3;
+
+  function fixedSlotRect(col: number, row: number): PixelRect {
+    return {
+      x: gridRect.x + col * cellWidth + cellWidth * 0.10,
+      y: gridRect.y + row * cellHeight + cellHeight * 0.08,
+      width: cellWidth * 0.80,
+      height: cellHeight * 0.82,
+    };
+  }
+
+  const fallback: Record<ArtifactSlotKey, PixelRect> = {
+    sword: fixedSlotRect(0, 0),
+    shield: fixedSlotRect(1, 0),
+    boots: fixedSlotRect(2, 0),
+    chest: fixedSlotRect(0, 1),
+    helmet: fixedSlotRect(1, 1),
+    pants: fixedSlotRect(0, 2),
+  };
+
+  for (const slot of SLOT_ORDER) {
+    const circle = artifactCircles[slot];
+    if (!circle) {
+      continue;
+    }
+
+    const pad = circle.r * 0.18;
+
+    fallback[slot] = {
+      x: clamp(circle.cx - circle.r - pad, 0, rootCanvas.width - 1),
+      y: clamp(circle.cy - circle.r - pad, 0, rootCanvas.height - 1),
+      width: clamp(
+        circle.r * 2 + pad * 2,
+        1,
+        rootCanvas.width - clamp(circle.cx - circle.r - pad, 0, rootCanvas.width - 1)
+      ),
+      height: clamp(
+        circle.r * 2 + pad * 2,
+        1,
+        rootCanvas.height - clamp(circle.cy - circle.r - pad, 0, rootCanvas.height - 1)
+      ),
+    };
+  }
+
+  return fallback;
+}
+
+function buildTopInfoRect(
+  rootCanvas: HTMLCanvasElement,
+  titleRect: PixelRect
+): PixelRect {
+  const nameRect = findYellowNameRect(rootCanvas);
+
+  if (nameRect) {
+    return buildTopInfoRectFromName(rootCanvas, nameRect);
+  }
+
+  const rootWidth = rootCanvas.width;
+  const x = clamp(titleRect.x - rootWidth * 0.02, 0, rootWidth * 0.98);
+  const y = 0;
+  const width = rootWidth - x - rootWidth * 0.02;
+  const height = Math.max(
+    titleRect.y - rootCanvas.height * 0.02,
+    rootCanvas.height * 0.18
+  );
+
+  return { x, y, width, height };
+}
+
+function findYellowNameRect(rootCanvas: HTMLCanvasElement): PixelRect | null {
+  const searchRegion: NormalizedRegion = {
+    x: 0.18,
+    y: 0.08,
+    width: 0.72,
+    height: 0.18,
+  };
+
+  const search = cropNormalized(rootCanvas, searchRegion);
+  const context = search.getContext("2d");
+
+  if (!context) {
+    return null;
+  }
+
+  const { width, height } = search;
+  const imageData = context.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  const rowCounts = new Array<number>(height).fill(0);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const a = data[index + 3];
+
+      if (isYellowNamePixel(r, g, b, a)) {
+        rowCounts[y] += 1;
+      }
+    }
+  }
+
+  let bestStart = -1;
+  let bestEnd = -1;
+  let bestScore = 0;
+
+  for (let start = 0; start < height; start += 1) {
+    let score = 0;
+
+    for (let end = start; end < Math.min(height, start + 28); end += 1) {
+      score += rowCounts[end];
+
+      const bandHeight = end - start + 1;
+      if (bandHeight < 6) {
+        continue;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestStart = start;
+        bestEnd = end;
+      }
+    }
+  }
+
+  if (bestStart < 0 || bestEnd < 0 || bestScore < width * 4) {
+    return null;
+  }
+
+  const bandTop = Math.max(0, bestStart - 8);
+  const bandBottom = Math.min(height - 1, bestEnd + 8);
+
+  let minX = width;
+  let maxX = -1;
+
+  for (let y = bandTop; y <= bandBottom; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const a = data[index + 3];
+
+      if (isYellowNamePixel(r, g, b, a)) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+  }
+
+  if (maxX < minX) {
+    return null;
+  }
+
+  const searchX = searchRegion.x * rootCanvas.width;
+  const searchY = searchRegion.y * rootCanvas.height;
+
+  const rect = {
+    x: Math.max(searchX + minX - 8, 0),
+    y: Math.max(searchY + bandTop - 6, 0),
+    width: Math.min(maxX - minX + 17, rootCanvas.width),
+    height: Math.min(bandBottom - bandTop + 13, rootCanvas.height),
+  };
+
+  return expandPixelRect(rootCanvas, rect, 4, 4, 6);
+}
+
+function findMightLineRects(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+): { individualRect: PixelRect | null; heroRect: PixelRect | null } {
+  const nameRect = findYellowNameRect(rootCanvas);
+
+  const searchX = nameRect
+    ? clamp(nameRect.x - 12, infoRect.x, rootCanvas.width - 1)
+    : clamp(infoRect.x + infoRect.width * 0.22, 0, rootCanvas.width - 1);
+
+  const searchY = nameRect
+    ? clamp(nameRect.y + nameRect.height + 6, infoRect.y, rootCanvas.height - 1)
+    : clamp(infoRect.y + infoRect.height * 0.26, 0, rootCanvas.height - 1);
+
+  const searchRight = clamp(
+    infoRect.x + infoRect.width * 0.88,
+    searchX + 80,
+    rootCanvas.width
+  );
+
+  const searchBottom = clamp(
+    infoRect.y + infoRect.height * 0.70,
+    searchY + 60,
+    rootCanvas.height
+  );
+
+  const searchRect: PixelRect = {
+    x: searchX,
+    y: searchY,
+    width: searchRight - searchX,
+    height: searchBottom - searchY,
+  };
+
+  const searchCrop = cropPixelRect(rootCanvas, searchRect);
+  const mask = buildWhiteTextCanvas(searchCrop);
+  const context = mask.getContext("2d");
+
+  if (!context) {
+    return { individualRect: null, heroRect: null };
+  }
+
+  const { width, height } = mask;
+  const imageData = context.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  const rowCounts = new Array<number>(height).fill(0);
+
+  for (let y = 0; y < height; y += 1) {
+    let count = 0;
+
+    for (let x = Math.floor(width * 0.10); x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const r = data[index];
+
+      if (r < 80) {
+        count += 1;
+      }
+    }
+
+    rowCounts[y] = count;
+  }
+
+  const smoothed = rowCounts.map((_, index) => {
+    let total = 0;
+    let samples = 0;
+
+    for (let offset = -2; offset <= 2; offset += 1) {
+      const row = index + offset;
+      if (row < 0 || row >= height) {
+        continue;
+      }
+
+      total += rowCounts[row];
+      samples += 1;
+    }
+
+    return samples > 0 ? total / samples : rowCounts[index];
+  });
+
+  const threshold = Math.max(10, Math.floor(width * 0.045));
+  const bands: Array<{ start: number; end: number; score: number }> = [];
+
+  let currentStart = -1;
+  let currentScore = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    const active = smoothed[y] >= threshold;
+
+    if (active && currentStart < 0) {
+      currentStart = y;
+      currentScore = smoothed[y];
+      continue;
+    }
+
+    if (active && currentStart >= 0) {
+      currentScore += smoothed[y];
+      continue;
+    }
+
+    if (!active && currentStart >= 0) {
+      const end = y - 1;
+      if (end - currentStart + 1 >= 8) {
+        bands.push({
+          start: currentStart,
+          end,
+          score: currentScore,
+        });
+      }
+      currentStart = -1;
+      currentScore = 0;
+    }
+  }
+
+  if (currentStart >= 0) {
+    const end = height - 1;
+    if (end - currentStart + 1 >= 8) {
+      bands.push({
+        start: currentStart,
+        end,
+        score: currentScore,
+      });
+    }
+  }
+
+  if (!bands.length) {
+    return { individualRect: null, heroRect: null };
+  }
+
+  const topBands = [...bands]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 2)
+    .sort((a, b) => a.start - b.start);
+
+  const [firstBand, secondBand] = topBands;
+
+  function bandToRect(band: { start: number; end: number } | undefined): PixelRect | null {
+    if (!band) {
+      return null;
+    }
+
+    return {
+      x: searchRect.x,
+      y: searchRect.y + Math.max(band.start - 4, 0),
+      width: searchRect.width,
+      height: Math.min(band.end - band.start + 9, searchRect.height),
+    };
+  }
+
+  return {
+    individualRect: bandToRect(firstBand),
+    heroRect: bandToRect(secondBand),
+  };
+}
+
+function buildTopInfoRectFromName(
+  rootCanvas: HTMLCanvasElement,
+  nameRect: PixelRect
+): PixelRect {
+  const x = clamp(
+    nameRect.x - Math.max(90, nameRect.width * 1.10),
+    0,
+    rootCanvas.width - 1
+  );
+
+  const y = clamp(
+    nameRect.y - Math.max(18, nameRect.height * 0.90),
+    0,
+    rootCanvas.height - 1
+  );
+
+  const right = clamp(
+    nameRect.x + Math.max(nameRect.width * 1.50, 360),
+    1,
+    rootCanvas.width
+  );
+
+  const bottom = clamp(
+    nameRect.y + Math.max(nameRect.height * 4.80, 170),
+    1,
+    rootCanvas.height
+  );
+
+  return {
+    x,
+    y,
+    width: right - x,
+    height: bottom - y,
+  };
+}
+
+async function extractChiefName(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+) {
+  const nameRect = findYellowNameRect(rootCanvas);
+  const candidates: NameCandidate[] = [];
+
+  if (nameRect) {
+    const exactCrop = cropPixelRect(
+      rootCanvas,
+      expandPixelRect(rootCanvas, nameRect, 8, 8, 10)
+    );
+
+    const paddedCrop = cropPixelRect(
+      rootCanvas,
+      expandPixelRect(rootCanvas, nameRect, 16, 12, 14)
+    );
+
+    const tallCrop = cropPixelRect(
+      rootCanvas,
+      expandPixelRect(rootCanvas, nameRect, 10, 14, 18)
+    );
+
+    for (const crop of [exactCrop, paddedCrop, tallCrop]) {
+      const yellowPrepared = upscaleCanvas(buildYellowTextCanvas(crop), 5);
+      const rawPrepared = upscaleCanvas(crop, 4);
+
+      const [yellowOcr, rawOcr] = await Promise.all([
+        recognizeDetailed(yellowPrepared, {
+          whitelist:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+          pageSegMode: "7",
+        }),
+        recognizeDetailed(rawPrepared, {
+          whitelist:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+          pageSegMode: "7",
+        }),
+      ]);
+
+      candidates.push(...extractNameCandidatesFromOCR(yellowOcr, 1.25));
+      candidates.push(...extractNameCandidatesFromOCR(rawOcr, 1.0));
+    }
+  }
+
+  if (!candidates.length) {
+    const fallbackCrop = cropRelativeToRect(rootCanvas, infoRect, {
+      x: 0.16,
+      y: 0.05,
+      width: 0.66,
+      height: 0.18,
+    });
+
+    const fallbackPrepared = upscaleCanvas(buildYellowTextCanvas(fallbackCrop), 5);
+    const fallbackOcr = await recognizeDetailed(fallbackPrepared, {
+      whitelist:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+      pageSegMode: "7",
+    });
+
+    candidates.push(...extractNameCandidatesFromOCR(fallbackOcr, 1.0));
+  }
+
+  return chooseBestChiefName(candidates);
+}
+
+function extractNameCandidatesFromOCR(
+  ocr: OCRResultLite,
+  sourceWeight: number
+): NameCandidate[] {
+  const results: NameCandidate[] = [];
+
+  const wordTokens = ocr.words
+    .map((word) => ({
+      value: cleanLeadingNoise(word.text),
+      confidence: word.confidence,
+    }))
+    .filter((entry) => entry.value !== "Unknown")
+    .filter((entry) => /[A-Za-z]/.test(entry.value))
+    .filter((entry) => entry.value.length >= 2);
+
+  for (let index = 0; index < wordTokens.length; index += 1) {
+    const one = wordTokens[index];
+    results.push({
+      value: one.value,
+      weight: sourceWeight * Math.max(0.4, one.confidence / 100),
+    });
+
+    if (index + 1 < wordTokens.length) {
+      const two = cleanLeadingNoise(`${wordTokens[index].value}${wordTokens[index + 1].value}`);
+      if (two !== "Unknown") {
+        results.push({
+          value: two,
+          weight:
+            sourceWeight *
+            Math.max(
+              0.45,
+              Math.min(wordTokens[index].confidence, wordTokens[index + 1].confidence) / 100
+            ),
+        });
+      }
+    }
+  }
+
+  const rawTokens = (ocr.text ?? "")
+    .replace(/[·•]/g, " ")
+    .split(/\s+/)
+    .map((token) => cleanLeadingNoise(token))
+    .filter((token) => token !== "Unknown")
+    .filter((token) => /[A-Za-z]/.test(token));
+
+  for (const token of rawTokens) {
+    results.push({
+      value: token,
+      weight: sourceWeight * 0.75,
+    });
+  }
+
+  return results;
+}
+
+function chooseBestChiefName(candidates: NameCandidate[]): string {
+  const normalized = candidates
+    .map((candidate) => ({
+      value: cleanLeadingNoise(candidate.value),
+      weight: candidate.weight,
+    }))
+    .filter((candidate) => candidate.value !== "Unknown");
+
+  if (!normalized.length) {
+    return "Unknown";
+  }
+
+  const aggregated = new Map<string, number>();
+
+  for (const candidate of normalized) {
+    aggregated.set(
+      candidate.value,
+      (aggregated.get(candidate.value) ?? 0) + candidate.weight
+    );
+  }
+
+  const values = [...aggregated.keys()];
+
+  let best = "Unknown";
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const value of values) {
+    let score = (aggregated.get(value) ?? 0) * 100 + scoreNameCandidate(value);
+
+    for (const other of values) {
+      if (other === value) {
+        continue;
+      }
+
+      const prefix = commonPrefixLength(value.toLowerCase(), other.toLowerCase());
+      const minLen = Math.min(value.length, other.length);
+
+      if (prefix >= Math.max(5, Math.floor(minLen * 0.72))) {
+        if (value.length <= other.length) {
+          score += 18 + prefix * 1.5;
+        } else {
+          score -= 10 + (value.length - other.length) * 2.2;
+        }
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = value;
+    }
+  }
+
+  return best;
+}
+
+function commonPrefixLength(left: string, right: string) {
+  const max = Math.min(left.length, right.length);
+  let count = 0;
+
+  for (let index = 0; index < max; index += 1) {
+    if (left[index] !== right[index]) {
+      break;
+    }
+    count += 1;
+  }
+
+  return count;
+}
+
+async function extractMightPair(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+): Promise<{ individualMight: number; heroMight: number }> {
+  const { individualRect } = findMightLineRects(rootCanvas, infoRect);
+
+  const individualMight = individualRect
+    ? await readBestNumberFromRow(cropPixelRect(rootCanvas, individualRect))
+    : 0;
+
+  return {
+    individualMight,
+    heroMight: 0,
+  };
+}
+
+async function readBestNumberFromRow(
+  crop: HTMLCanvasElement
+): Promise<number> {
+  const variants: HTMLCanvasElement[] = [
+    crop,
+    cropNormalized(crop, { x: 0.08, y: 0, width: 0.92, height: 1 }),
+    cropNormalized(crop, { x: 0.14, y: 0, width: 0.86, height: 1 }),
+    cropNormalized(crop, { x: 0.20, y: 0, width: 0.80, height: 1 }),
+    buildWhiteTextCanvas(crop),
+    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.08, y: 0, width: 0.92, height: 1 })),
+    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.14, y: 0, width: 0.86, height: 1 })),
+    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.20, y: 0, width: 0.80, height: 1 })),
+  ];
+
+  const candidates: string[] = [];
+
+  for (const variant of variants) {
+    const prepared = upscaleCanvas(variant, 4);
+
+    const ocr = await recognizeDetailed(prepared, {
+      whitelist: "0123456789,.",
+      pageSegMode: "7",
+    });
+
+    candidates.push(...extractNumericCandidatesFromOCR(ocr));
+  }
+
+  return chooseBestNumericCandidate(candidates);
+}
+
+function extractNumericCandidatesFromOCR(ocr: OCRResultLite): string[] {
+  const values = new Set<string>();
+
+  const rawMatches = ocr.text.match(/\d[\d,.\s]{2,}/g) ?? [];
+  for (const match of rawMatches) {
+    const digits = match.replace(/[^\d]/g, "");
+    if (digits.length >= 8 && digits.length <= 10) {
+      values.add(digits);
+    }
+  }
+
+  for (const word of ocr.words) {
+    const digits = (word.text ?? "").replace(/[^\d]/g, "");
+    if (digits.length >= 8 && digits.length <= 10) {
+      values.add(digits);
+    }
+  }
+
+  return [...values];
+}
+
+function chooseBestNumericCandidate(candidates: string[]): number {
+  const filtered = candidates
+    .filter((value) => /^\d+$/.test(value))
+    .filter((value) => value.length >= 8 && value.length <= 10)
+    .map((value) => value.replace(/^0+/, "") || "0")
+    .filter((value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric >= 10000 && numeric <= 500000000;
+    });
+
+  if (!filtered.length) {
+    return 0;
+  }
+
+  const unique = [...new Set(filtered)];
+
+  let best = unique[0];
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of unique) {
+    let score = 0;
+
+    for (const other of filtered) {
+      if (candidate === other) {
+        score += 100;
+      } else {
+        score += numericStringSimilarity(candidate, other) * 20;
+      }
+    }
+
+    if (candidate.length === 9) {
+      score += 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  return Number(best);
+}
+
+function numericStringSimilarity(left: string, right: string) {
+  const max = Math.max(left.length, right.length);
+  if (max === 0) {
+    return 0;
+  }
+
+  const a = left.padStart(max, "_");
+  const b = right.padStart(max, "_");
+
+  let matches = 0;
+  for (let index = 0; index < max; index += 1) {
+    if (a[index] === b[index]) {
+      matches += 1;
+    }
+  }
+
+  return matches / max;
+}
+
+type TargetCircleDetection = {
+  target: ArtifactSearchTarget;
+  circle: PixelCircle | null;
+};
+
+function detectArtifactCircles(
+  rootCanvas: HTMLCanvasElement,
+  gridRect: PixelRect
+): Partial<Record<ArtifactSlotKey, PixelCircle>> {
+  const gridCanvas = cropPixelRect(rootCanvas, gridRect);
+  const context = gridCanvas.getContext("2d");
+
+  if (!context) {
+    return {};
+  }
+
+  const { width, height } = gridCanvas;
+  const imageData = context.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  const cellWidth = width / 3;
+  const cellHeight = height / 3;
+
+  const firstPass: TargetCircleDetection[] = ARTIFACT_SEARCH_TARGETS.map(
+    (target) => ({
+      target,
+      circle: detectBestCircleInTargetCell(
+        data,
+        width,
+        height,
+        gridRect,
+        cellWidth,
+        cellHeight,
+        target
+      ),
     })
   );
+
+  const regularized = regularizeArtifactTargetDetections(
+    firstPass,
+    gridRect,
+    cellWidth,
+    cellHeight
+  );
+
+  const secondPass: TargetCircleDetection[] = regularized.map((entry) => {
+    const refined = detectCircleAroundExpected(
+      data,
+      width,
+      height,
+      gridRect,
+      cellWidth,
+      cellHeight,
+      entry
+    );
+
+    return {
+      target: entry.target,
+      circle: refined ?? entry.circle,
+    };
+  });
+
+  const result: Partial<Record<ArtifactSlotKey, PixelCircle>> = {};
+
+  for (const entry of secondPass) {
+    if (!entry.circle || entry.target.slot === "ignore") {
+      continue;
+    }
+
+    result[entry.target.slot] = entry.circle;
+  }
+
+  return result;
+}
+
+function regularizeArtifactTargetDetections(
+  detections: TargetCircleDetection[],
+  gridRect: PixelRect,
+  cellWidth: number,
+  cellHeight: number
+): Array<
+  TargetCircleDetection & {
+    expectedCx: number;
+    expectedCy: number;
+    expectedR: number;
+  }
+> {
+  const local = detections.map((entry) => ({
+    ...entry,
+    localCx: entry.circle ? entry.circle.cx - gridRect.x : null,
+    localCy: entry.circle ? entry.circle.cy - gridRect.y : null,
+    localR: entry.circle ? entry.circle.r : null,
+  }));
+
+  const radii = local
+    .map((entry) => entry.localR)
+    .filter((value): value is number => typeof value === "number");
+
+  const medianR =
+    median(radii) ?? Math.min(cellWidth, cellHeight) * 0.34;
+
+  const colMedians = [0, 1, 2].map((col) =>
+    median(
+      local
+        .filter((entry) => entry.target.col === col && entry.localCx !== null)
+        .map((entry) => entry.localCx as number)
+    )
+  );
+
+  const rowMedians = [0, 1, 2].map((row) =>
+    median(
+      local
+        .filter((entry) => entry.target.row === row && entry.localCy !== null)
+        .map((entry) => entry.localCy as number)
+    )
+  );
+
+  const gapXCandidates: number[] = [];
+  const gapYCandidates: number[] = [];
+
+  for (let row = 0; row < 3; row += 1) {
+    const rowEntries = local.filter((entry) => entry.target.row === row);
+
+    const c0 = rowEntries.find((entry) => entry.target.col === 0)?.localCx;
+    const c1 = rowEntries.find((entry) => entry.target.col === 1)?.localCx;
+    const c2 = rowEntries.find((entry) => entry.target.col === 2)?.localCx;
+
+    if (typeof c0 === "number" && typeof c1 === "number") {
+      gapXCandidates.push(c1 - c0);
+    }
+    if (typeof c1 === "number" && typeof c2 === "number") {
+      gapXCandidates.push(c2 - c1);
+    }
+    if (typeof c0 === "number" && typeof c2 === "number") {
+      gapXCandidates.push((c2 - c0) / 2);
+    }
+  }
+
+  for (let col = 0; col < 3; col += 1) {
+    const colEntries = local.filter((entry) => entry.target.col === col);
+
+    const r0 = colEntries.find((entry) => entry.target.row === 0)?.localCy;
+    const r1 = colEntries.find((entry) => entry.target.row === 1)?.localCy;
+    const r2 = colEntries.find((entry) => entry.target.row === 2)?.localCy;
+
+    if (typeof r0 === "number" && typeof r1 === "number") {
+      gapYCandidates.push(r1 - r0);
+    }
+    if (typeof r1 === "number" && typeof r2 === "number") {
+      gapYCandidates.push(r2 - r1);
+    }
+    if (typeof r0 === "number" && typeof r2 === "number") {
+      gapYCandidates.push((r2 - r0) / 2);
+    }
+  }
+
+  if (
+    typeof colMedians[0] === "number" &&
+    typeof colMedians[1] === "number"
+  ) {
+    gapXCandidates.push(colMedians[1]! - colMedians[0]!);
+  }
+  if (
+    typeof colMedians[1] === "number" &&
+    typeof colMedians[2] === "number"
+  ) {
+    gapXCandidates.push(colMedians[2]! - colMedians[1]!);
+  }
+  if (
+    typeof rowMedians[0] === "number" &&
+    typeof rowMedians[1] === "number"
+  ) {
+    gapYCandidates.push(rowMedians[1]! - rowMedians[0]!);
+  }
+  if (
+    typeof rowMedians[1] === "number" &&
+    typeof rowMedians[2] === "number"
+  ) {
+    gapYCandidates.push(rowMedians[2]! - rowMedians[1]!);
+  }
+
+  const centerX = colMedians[1] ?? cellWidth * 1.5;
+  const centerY = rowMedians[1] ?? cellHeight * 1.5;
+
+  const gapX = medianPositive(gapXCandidates, cellWidth * 0.92);
+  const gapY = medianPositive(gapYCandidates, cellHeight * 0.98);
+
+  let regX0 = colMedians[0] ?? centerX - gapX;
+  let regX1 = centerX;
+  let regX2 = colMedians[2] ?? centerX + gapX;
+
+  if (
+    typeof colMedians[0] === "number" &&
+    typeof colMedians[2] === "number"
+  ) {
+    const symmetricGap =
+      ((centerX - colMedians[0]!) + (colMedians[2]! - centerX)) / 2;
+    regX0 = centerX - symmetricGap;
+    regX2 = centerX + symmetricGap;
+  } else if (
+    typeof colMedians[0] === "number" &&
+    typeof colMedians[2] !== "number"
+  ) {
+    regX2 = centerX + (centerX - colMedians[0]!);
+  } else if (
+    typeof colMedians[2] === "number" &&
+    typeof colMedians[0] !== "number"
+  ) {
+    regX0 = centerX - (colMedians[2]! - centerX);
+  }
+
+  let regY0 = rowMedians[0] ?? centerY - gapY;
+  let regY1 = centerY;
+  let regY2 = rowMedians[2] ?? centerY + gapY;
+
+  if (
+    typeof rowMedians[0] === "number" &&
+    typeof rowMedians[2] === "number"
+  ) {
+    const symmetricGap =
+      ((centerY - rowMedians[0]!) + (rowMedians[2]! - centerY)) / 2;
+    regY0 = centerY - symmetricGap;
+    regY2 = centerY + symmetricGap;
+  } else if (
+    typeof rowMedians[0] === "number" &&
+    typeof rowMedians[2] !== "number"
+  ) {
+    regY2 = centerY + (centerY - rowMedians[0]!);
+  } else if (
+    typeof rowMedians[2] === "number" &&
+    typeof rowMedians[0] !== "number"
+  ) {
+    regY0 = centerY - (rowMedians[2]! - centerY);
+  }
+
+  const regXs = [regX0, regX1, regX2];
+  const regYs = [regY0, regY1, regY2];
+
+  const sword = local.find((entry) => entry.target.slot === "sword") ?? null;
+  const boots = local.find((entry) => entry.target.slot === "boots") ?? null;
+  const chest = local.find((entry) => entry.target.slot === "chest") ?? null;
+  const helmet = local.find((entry) => entry.target.slot === "helmet") ?? null;
+
+  const shieldGeomCx =
+    typeof sword?.localCx === "number" && typeof boots?.localCx === "number"
+      ? (sword.localCx + boots.localCx) / 2
+      : null;
+
+  const shieldGeomCy =
+    typeof sword?.localCy === "number" && typeof boots?.localCy === "number"
+      ? (sword.localCy + boots.localCy) / 2
+      : null;
+
+  const shieldGeomR =
+    median(
+      [
+        sword?.localR,
+        boots?.localR,
+        chest?.localR,
+        helmet?.localR,
+      ].filter((value): value is number => typeof value === "number")
+    ) ?? medianR;
+
+  return local.map((entry) => {
+    const targetX = regXs[entry.target.col];
+    const targetY = regYs[entry.target.row];
+
+    let expectedCx =
+      typeof entry.localCx === "number"
+        ? targetX * 0.65 + entry.localCx * 0.35
+        : targetX;
+
+    let expectedCy =
+      typeof entry.localCy === "number"
+        ? targetY * 0.65 + entry.localCy * 0.35
+        : targetY;
+
+    let expectedR =
+      typeof entry.localR === "number"
+        ? medianR * 0.70 + entry.localR * 0.30
+        : medianR;
+
+    const isTopCenter = entry.target.row === 0 && entry.target.col === 1;
+
+    if (isTopCenter) {
+      if (typeof shieldGeomCx === "number") {
+        expectedCx = shieldGeomCx * 0.85 + expectedCx * 0.15;
+      }
+      if (typeof shieldGeomCy === "number") {
+        expectedCy = shieldGeomCy * 0.85 + expectedCy * 0.15;
+      }
+      expectedR = shieldGeomR;
+    }
+
+    return {
+      target: entry.target,
+      circle: entry.circle,
+      expectedCx,
+      expectedCy,
+      expectedR,
+    };
+  });
+}
+
+function detectCircleAroundExpected(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  gridRect: PixelRect,
+  cellWidth: number,
+  cellHeight: number,
+  entry: TargetCircleDetection & {
+    expectedCx: number;
+    expectedCy: number;
+    expectedR: number;
+  }
+): PixelCircle | null {
+  const cellX = entry.target.col * cellWidth;
+  const cellY = entry.target.row * cellHeight;
+  const isTopCenter = entry.target.row === 0 && entry.target.col === 1;
+
+  // Shield dourado: fixar raio pela geometria e só procurar melhor centro
+  if (isTopCenter) {
+    const lockedR = Math.round(
+      Math.max(entry.expectedR, entry.circle?.r ?? 0)
+    );
+
+    const cxMin = Math.max(
+      Math.floor(cellX + cellWidth * 0.22),
+      Math.floor(entry.expectedCx - cellWidth * 0.07)
+    );
+    const cxMax = Math.min(
+      Math.ceil(cellX + cellWidth * 0.78),
+      Math.ceil(entry.expectedCx + cellWidth * 0.07)
+    );
+
+    const cyMin = Math.max(
+      Math.floor(cellY + cellHeight * 0.18),
+      Math.floor(entry.expectedCy - cellHeight * 0.07)
+    );
+    const cyMax = Math.min(
+      Math.ceil(cellY + cellHeight * 0.66),
+      Math.ceil(entry.expectedCy + cellHeight * 0.07)
+    );
+
+    let bestRaw = Number.NEGATIVE_INFINITY;
+    let bestCx = Math.round(entry.expectedCx);
+    let bestCy = Math.round(entry.expectedCy);
+
+    for (let cy = cyMin; cy <= cyMax; cy += 1) {
+      for (let cx = cxMin; cx <= cxMax; cx += 1) {
+        const raw = scoreAnchoredArtifactCircleCandidate(
+          data,
+          width,
+          height,
+          cx,
+          cy,
+          lockedR
+        );
+
+        const centerPenalty =
+          Math.hypot(cx - entry.expectedCx, cy - entry.expectedCy) * 1.8;
+
+        const adjusted = raw - centerPenalty;
+
+        if (adjusted > bestRaw) {
+          bestRaw = adjusted;
+          bestCx = cx;
+          bestCy = cy;
+        }
+      }
+    }
+
+    return {
+      cx: gridRect.x + bestCx,
+      cy: gridRect.y + bestCy,
+      r: lockedR,
+      score: bestRaw,
+    };
+  }
+
+  const cxMin = Math.max(
+    Math.floor(cellX + cellWidth * 0.18),
+    Math.floor(entry.expectedCx - cellWidth * 0.10)
+  );
+  const cxMax = Math.min(
+    Math.ceil(cellX + cellWidth * 0.82),
+    Math.ceil(entry.expectedCx + cellWidth * 0.10)
+  );
+
+  const cyMin = Math.max(
+    Math.floor(cellY + cellHeight * 0.16),
+    Math.floor(entry.expectedCy - cellHeight * 0.10)
+  );
+  const cyMax = Math.min(
+    Math.ceil(cellY + cellHeight * 0.74),
+    Math.ceil(entry.expectedCy + cellHeight * 0.10)
+  );
+
+  const baseR = Math.max(entry.circle?.r ?? 0, entry.expectedR);
+
+  const rMin = Math.max(12, Math.floor(baseR * 0.88));
+  const rMax = Math.max(rMin + 1, Math.ceil(baseR * 1.08));
+
+  let bestAdjusted = Number.NEGATIVE_INFINITY;
+  let bestRaw = Number.NEGATIVE_INFINITY;
+  let best: PixelCircle | null = null;
+
+  for (let cy = cyMin; cy <= cyMax; cy += 2) {
+    for (let cx = cxMin; cx <= cxMax; cx += 2) {
+      for (let r = rMin; r <= rMax; r += 1) {
+        const raw = scoreAnchoredArtifactCircleCandidate(
+          data,
+          width,
+          height,
+          cx,
+          cy,
+          r
+        );
+
+        const centerPenalty =
+          Math.hypot(cx - entry.expectedCx, cy - entry.expectedCy) * 1.5;
+
+        const radiusPenalty =
+          Math.abs(r - entry.expectedR) * 2.2 +
+          Math.max(0, entry.expectedR - r) * 4.8;
+
+        const adjusted = raw - centerPenalty - radiusPenalty;
+
+        if (adjusted > bestAdjusted) {
+          bestAdjusted = adjusted;
+          bestRaw = raw;
+          best = {
+            cx: gridRect.x + cx,
+            cy: gridRect.y + cy,
+            r,
+            score: bestRaw,
+          };
+        }
+      }
+    }
+  }
+
+  if (!best) {
+    return entry.circle;
+  }
+
+  if (entry.circle) {
+    const minAllowedR = entry.circle.r * 0.86;
+    const maxCenterShift = entry.circle.r * 0.35;
+    const centerShift = Math.hypot(
+      best.cx - entry.circle.cx,
+      best.cy - entry.circle.cy
+    );
+
+    if (best.r < minAllowedR && centerShift < maxCenterShift) {
+      return entry.circle;
+    }
+  }
+
+  if (bestRaw < 58) {
+    return entry.circle;
+  }
+
+  return {
+    ...best,
+    cx: Math.round(best.cx),
+    cy: Math.round(best.cy),
+    r: Math.round(best.r),
+  };
+}
+
+function median(values: number[]): number | null {
+  const filtered = values.filter((value) => Number.isFinite(value));
+  if (!filtered.length) {
+    return null;
+  }
+
+  const sorted = [...filtered].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 1) {
+    return sorted[mid];
+  }
+
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function medianPositive(values: number[], fallback: number): number {
+  const filtered = values.filter(
+    (value) => Number.isFinite(value) && value > 0
+  );
+
+  return median(filtered) ?? fallback;
+}
+
+function detectBestCircleInTargetCell(
+  data: Uint8ClampedArray,
+  gridWidth: number,
+  gridHeight: number,
+  gridRect: PixelRect,
+  cellWidth: number,
+  cellHeight: number,
+  target: ArtifactSearchTarget
+): PixelCircle | null {
+  const cellX = target.col * cellWidth;
+  const cellY = target.row * cellHeight;
+
+  const cxMin = Math.floor(cellX + cellWidth * 0.24);
+  const cxMax = Math.ceil(cellX + cellWidth * 0.76);
+
+  const cyMin = Math.floor(cellY + cellHeight * 0.18);
+  const cyMax = Math.ceil(cellY + cellHeight * 0.60);
+
+  const baseRadius = Math.min(cellWidth, cellHeight);
+  const rMin = Math.max(16, Math.floor(baseRadius * 0.24));
+  const rMax = Math.max(rMin + 2, Math.ceil(baseRadius * 0.40));
+
+  let best: PixelCircle | null = null;
+
+  for (let cy = cyMin; cy <= cyMax; cy += 3) {
+    for (let cx = cxMin; cx <= cxMax; cx += 3) {
+      for (let r = rMin; r <= rMax; r += 2) {
+        const score = scoreAnchoredArtifactCircleCandidate(
+          data,
+          gridWidth,
+          gridHeight,
+          cx,
+          cy,
+          r
+        );
+
+        if (!best || score > best.score) {
+          best = {
+            cx: gridRect.x + cx,
+            cy: gridRect.y + cy,
+            r,
+            score,
+          };
+        }
+      }
+    }
+  }
+
+  if (!best || best.score < 62) {
+    return null;
+  }
+
+  return refineCircleLocally(
+    data,
+    gridWidth,
+    gridHeight,
+    gridRect,
+    best
+  );
+}
+
+function refineCircleLocally(
+  data: Uint8ClampedArray,
+  gridWidth: number,
+  gridHeight: number,
+  gridRect: PixelRect,
+  seed: PixelCircle
+): PixelCircle {
+  const localCx = seed.cx - gridRect.x;
+  const localCy = seed.cy - gridRect.y;
+
+  let best = {
+    ...seed,
+    cx: localCx,
+    cy: localCy,
+  };
+
+  for (let cy = localCy - 4; cy <= localCy + 4; cy += 1) {
+    for (let cx = localCx - 4; cx <= localCx + 4; cx += 1) {
+      for (let r = seed.r - 2; r <= seed.r + 2; r += 1) {
+        if (r < 12) {
+          continue;
+        }
+
+        const score = scoreAnchoredArtifactCircleCandidate(
+          data,
+          gridWidth,
+          gridHeight,
+          cx,
+          cy,
+          r
+        );
+
+        if (score > best.score) {
+          best = {
+            cx,
+            cy,
+            r,
+            score,
+          };
+        }
+      }
+    }
+  }
+
+  return {
+    cx: gridRect.x + Math.round(best.cx),
+    cy: gridRect.y + Math.round(best.cy),
+    r: Math.round(best.r),
+    score: best.score,
+  };
+}
+
+function scoreAnchoredArtifactCircleCandidate(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  cx: number,
+  cy: number,
+  r: number
+): number {
+  const samples = 36;
+
+  let recognised = 0;
+  let outsidePenalty = 0;
+  let contrastTotal = 0;
+  let valid = 0;
+
+  const bins = {
+    grey: 0,
+    green: 0,
+    blue: 0,
+    purple: 0,
+    gold: 0,
+    red: 0,
+    other: 0,
+  };
+
+  for (let i = 0; i < samples; i += 1) {
+    const angle = (i / samples) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    const pInner = readPixel(
+      data,
+      width,
+      height,
+      Math.round(cx + cos * r * 0.46),
+      Math.round(cy + sin * r * 0.46)
+    );
+
+    const pRingA = readPixel(
+      data,
+      width,
+      height,
+      Math.round(cx + cos * r * 0.72),
+      Math.round(cy + sin * r * 0.72)
+    );
+
+    const pRingB = readPixel(
+      data,
+      width,
+      height,
+      Math.round(cx + cos * r * 0.82),
+      Math.round(cy + sin * r * 0.82)
+    );
+
+    const pRingC = readPixel(
+      data,
+      width,
+      height,
+      Math.round(cx + cos * r * 0.90),
+      Math.round(cy + sin * r * 0.90)
+    );
+
+    const pOuter = readPixel(
+      data,
+      width,
+      height,
+      Math.round(cx + cos * r * 1.08),
+      Math.round(cy + sin * r * 1.08)
+    );
+
+    if (!pInner || !pRingA || !pRingB || !pRingC || !pOuter) {
+      continue;
+    }
+
+    const family = pickRingFamily([
+      classifyArtifactPalette(pRingA.r, pRingA.g, pRingA.b),
+      classifyArtifactPalette(pRingB.r, pRingB.g, pRingB.b),
+      classifyArtifactPalette(pRingC.r, pRingC.g, pRingC.b),
+    ]);
+
+    bins[family] += 1;
+
+    if (family !== "other") {
+      recognised += 1;
+    }
+
+    const outerFamily = classifyArtifactPalette(pOuter.r, pOuter.g, pOuter.b);
+
+    if (family !== "other") {
+      if (family === "gold") {
+        if (outerFamily === family) {
+          outsidePenalty += 0.18;
+        }
+      } else if (outerFamily === family) {
+        outsidePenalty += 1;
+      }
+    }
+
+    const innerL = luminance(pInner.r, pInner.g, pInner.b);
+    const ringL =
+      (luminance(pRingA.r, pRingA.g, pRingA.b) +
+        luminance(pRingB.r, pRingB.g, pRingB.b) +
+        luminance(pRingC.r, pRingC.g, pRingC.b)) /
+      3;
+    const outerL = luminance(pOuter.r, pOuter.g, pOuter.b);
+
+    contrastTotal += Math.abs(ringL - outerL) + Math.abs(ringL - innerL) * 0.45;
+    valid += 1;
+  }
+
+  if (valid < Math.floor(samples * 0.8)) {
+    return 0;
+  }
+
+  const dominant = Math.max(
+    bins.grey,
+    bins.green,
+    bins.blue,
+    bins.purple,
+    bins.gold,
+    bins.red
+  );
+
+  const coverage = recognised / valid;
+  const dominantRatio = dominant / Math.max(recognised, 1);
+  const contrast = contrastTotal / valid;
+
+  return (
+    coverage * 58 +
+    dominantRatio * 26 +
+    contrast * 24 -
+    outsidePenalty * 4.5
+  );
+}
+
+function classifyArtifactPalette(
+  r: number,
+  g: number,
+  b: number
+): ArtifactColor | "other" {
+  const { hue, saturation, value } = rgbToHsv(r, g, b);
+
+  if (value < 0.14) {
+    return "other";
+  }
+
+  if (saturation < 0.16 && value >= 0.24) {
+    return "grey";
+  }
+
+  if ((hue <= 18 || hue >= 342) && saturation >= 0.28 && value >= 0.20) {
+    return "red";
+  }
+
+  if (hue >= 70 && hue < 170 && saturation >= 0.22 && value >= 0.18) {
+    return "green";
+  }
+
+  if (hue >= 170 && hue < 250 && saturation >= 0.21 && value >= 0.18) {
+    return "blue";
+  }
+
+  if (hue >= 250 && hue < 320 && saturation >= 0.20 && value >= 0.18) {
+    return "purple";
+  }
+
+  if (hue >= 18 && hue < 70 && saturation >= 0.22 && value >= 0.20) {
+    return "gold";
+  }
+
+  return "other";
+}
+
+function pickRingFamily(
+  families: Array<ArtifactColor | "other">
+): ArtifactColor | "other" {
+  const counts = new Map<ArtifactColor | "other", number>();
+
+  for (const family of families) {
+    counts.set(family, (counts.get(family) ?? 0) + 1);
+  }
+
+  let best: ArtifactColor | "other" = "other";
+  let bestCount = -1;
+
+  for (const family of [
+    "grey",
+    "green",
+    "blue",
+    "purple",
+    "gold",
+    "red",
+    "other",
+  ] as const) {
+    const count = counts.get(family) ?? 0;
+    if (count > bestCount) {
+      best = family;
+      bestCount = count;
+    }
+  }
+
+  return best;
+}
+
+function readPixel(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+) {
+  if (x < 0 || y < 0 || x >= width || y >= height) {
+    return null;
+  }
+
+  const index = (y * width + x) * 4;
+
+  return {
+    r: data[index],
+    g: data[index + 1],
+    b: data[index + 2],
+    a: data[index + 3],
+  };
+}
+
+function luminance(r: number, g: number, b: number) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function analyzeSlots(
+  rootCanvas: HTMLCanvasElement,
+  layout: LayoutModel
+): Record<ArtifactSlotKey, ArtifactSlotAnalysis> {
+  const entries = SLOT_ORDER.map((slot) => {
+    const circle = layout.artifactCircles[slot];
+
+    let color: ArtifactColor;
+    let runeColor: ArtifactColor;
+
+    if (circle) {
+      color = detectArtifactColorFromCircle(rootCanvas, circle, slot);
+      runeColor = detectRuneColorFromCircle(rootCanvas, circle);
+    } else {
+      const slotCanvas = cropPixelRect(rootCanvas, layout.slotRects[slot]);
+      color = detectArtifactColor(slotCanvas, slot);
+      runeColor = detectRuneColor(slotCanvas);
+    }
+
+    const level = LEVEL_BY_ARTIFACT_COLOR[color];
+
+    return [
+      slot,
+      {
+        slot,
+        color,
+        level,
+        runeColor,
+        score: COLOR_WEIGHTS[color] * 100 + level,
+        runeScore: COLOR_WEIGHTS[runeColor],
+      },
+    ] as const;
+  });
 
   return Object.fromEntries(
     entries
   ) as Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
-}
-
-async function findArtifactPanelAnchor(
-  rootCanvas: HTMLCanvasElement
-): Promise<ArtifactPanelAnchor> {
-  const rootWidth = rootCanvas.width;
-  const rootHeight = rootCanvas.height;
-
-  const fallback: ArtifactPanelAnchor = {
-    left: rootWidth * 0.738,
-    top: rootHeight * 0.484,
-    slotWidth: rootWidth * 0.069,
-    slotHeight: rootHeight * 0.155,
-    colGap: rootWidth * 0.068,
-    rowGap: rootHeight * 0.179,
-  };
-
-  try {
-    const searchCanvas = cropNormalized(rootCanvas, TITLE_SEARCH_REGION);
-    const prepared = upscaleCanvas(buildWhiteTextCanvas(searchCanvas), 3);
-
-    const result = await Tesseract.recognize(prepared, OCR_LANGUAGE, {
-      tessedit_pageseg_mode: "6",
-      tessedit_char_whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ",
-    } as never);
-
-    const words = (result.data.words ?? []) as Array<{
-      text: string;
-      bbox: { x0: number; y0: number; x1: number; y1: number };
-    }>;
-
-    const artifactWord = words.find((word) =>
-      /artifact/i.test((word.text ?? "").replace(/[^A-Za-z]/g, ""))
-    );
-
-    if (!artifactWord) {
-      return fallback;
-    }
-
-    const searchLeft = TITLE_SEARCH_REGION.x * rootWidth;
-    const searchTop = TITLE_SEARCH_REGION.y * rootHeight;
-    const scale = 3;
-
-    const titleLeft = searchLeft + artifactWord.bbox.x0 / scale;
-    const titleBottom = searchTop + artifactWord.bbox.y1 / scale;
-
-    return {
-      left: titleLeft - rootWidth * 0.052,
-      top: titleBottom + rootHeight * 0.020,
-      slotWidth: rootWidth * 0.069,
-      slotHeight: rootHeight * 0.155,
-      colGap: rootWidth * 0.068,
-      rowGap: rootHeight * 0.179,
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function cropSlotFromAnchor(
-  rootCanvas: HTMLCanvasElement,
-  anchor: ArtifactPanelAnchor,
-  slot: ArtifactSlotKey
-) {
-  const grid = SLOT_GRID_POSITION[slot];
-
-  const left = anchor.left + grid.col * anchor.colGap;
-  const top = anchor.top + grid.row * anchor.rowGap;
-
-  return cropPixels(
-    rootCanvas,
-    left,
-    top,
-    anchor.slotWidth,
-    anchor.slotHeight
-  );
-}
-
-function cropPixels(
-  source: HTMLCanvasElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(Math.floor(width), 1);
-  canvas.height = Math.max(Math.floor(height), 1);
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return canvas;
-  }
-
-  const sx = Math.max(Math.floor(x), 0);
-  const sy = Math.max(Math.floor(y), 0);
-  const sw = Math.min(Math.floor(width), source.width - sx);
-  const sh = Math.min(Math.floor(height), source.height - sy);
-
-  context.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return canvas;
 }
 
 function buildArmyScores(
@@ -474,115 +2273,32 @@ function getConfidenceLabel(
   return "low";
 }
 
-async function extractChiefName(rootCanvas: HTMLCanvasElement) {
-  const candidates: string[] = [];
+function cleanLeadingNoise(name: string) {
+  let cleaned = name
+    .replace(/^\[+/, "")
+    .replace(/\]+$/, "")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/[^A-Za-z0-9]+$/, "")
+    .replace(/\s+/g, "");
 
-  for (const region of NAME_REGIONS) {
-    const crop = cropNormalized(rootCanvas, region);
-    const yellowMask = buildYellowTextCanvas(crop);
-    const prepared = upscaleCanvas(yellowMask, 4);
-
-    const rawText = await recognizeText(prepared, {
-      whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
-    });
-
-    const normalized = normalizeChiefName(rawText);
-
-    if (normalized !== "Unknown") {
-      candidates.push(normalized);
-    }
+  const phvtIndex = cleaned.toLowerCase().indexOf("phvt");
+  if (phvtIndex > 0) {
+    cleaned = cleaned.slice(phvtIndex);
   }
 
-  if (!candidates.length) {
-    return "Unknown";
-  }
-
-  candidates.sort(
-    (left, right) => scoreNameCandidate(right) - scoreNameCandidate(left)
-  );
-
-  return cleanLeadingNoise(candidates[0]);
-}
-
-async function extractMight(
-  rootCanvas: HTMLCanvasElement,
-  region: NormalizedRegion
-): Promise<number> {
-  const crop = cropNormalized(rootCanvas, region);
-  const prepared = upscaleCanvas(buildWhiteTextCanvas(crop), 4);
-  const rawText = await recognizeText(prepared, {
-    whitelist: "0123456789,.",
-  });
-
-  return parseNumberFromOCR(rawText);
-}
-
-function parseNumberFromOCR(raw: string) {
-  const candidate = raw.match(/\d[\d,.\s]{2,}/)?.[0] ?? raw;
-  const digits = candidate.replace(/[^\d]/g, "");
-  if (!digits) {
-    return 0;
-  }
-
-  const parsed = Number(digits);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function normalizeChiefName(raw: string) {
-  const cleaned = raw
-    .replace(/\b(ID|KINGDOM|GO)\b/gi, " ")
-    .replace(/[^\p{L}\p{N}_-]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  cleaned = cleaned.replace(/^[Il|!]+(?=[A-Za-z])/, "");
+  cleaned = cleaned.replace(/^[^A-Za-z]+(?=[A-Za-z])/, "");
 
   if (!cleaned) {
     return "Unknown";
   }
 
-  const tokens = cleaned
-    .split(" ")
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .filter((token) => token.length >= 2);
-
-  if (!tokens.length) {
+  if (!/[A-Za-z]/.test(cleaned)) {
     return "Unknown";
   }
 
-  const joined = tokens.join("").replace(/^[-_]+/, "");
-
-  if (!joined || joined.length <= 1) {
+  if (cleaned.length < 3 || cleaned.length > 22) {
     return "Unknown";
-  }
-
-  return joined;
-}
-
-function cleanLeadingNoise(name: string) {
-  if (name === "Unknown") {
-    return name;
-  }
-
-  let cleaned = name;
-
-  cleaned = cleaned.replace(/^[^A-Za-z0-9]+/, "");
-
-  if (/xcal$/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^[A-Za-z]{2,6}(?=Xcal$)/i, "");
-    cleaned = `Phvt${cleaned}`;
-  }
-
-  if (/^pvi/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^pvi/i, "Phvt");
-  }
-
-  if (/^phvi/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^phvi/i, "Phvt");
-  }
-
-  if (/^pivt/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^pivt/i, "Phvt");
   }
 
   return cleaned;
@@ -595,35 +2311,211 @@ function scoreNameCandidate(name: string) {
 
   const letters = (name.match(/[A-Za-z]/g) ?? []).length;
   const digits = (name.match(/\d/g) ?? []).length;
+  const lowers = (name.match(/[a-z]/g) ?? []).length;
+  const uppers = (name.match(/[A-Z]/g) ?? []).length;
   const length = name.length;
 
-  let score = letters * 4 + digits * 2 + length;
+  let score = letters * 5 + digits * 1.5 + length;
 
-  if (length < 4) score -= 30;
-  if (length > 18) score -= 12;
-  if (/^phvt/i.test(name)) score += 16;
-  if (!/[A-Za-z]/.test(name)) score -= 20;
+  if (length < 4) score -= 35;
+  if (length > 16) score -= 12 + (length - 16) * 3;
+  if (digits > 3) score -= 20;
+  if (letters < 4) score -= 25;
+  if (uppers >= 1 && lowers >= 1) score += 8;
+  if (/^phvt/i.test(name)) score += 14;
+
+  if (/[A-Z]{3,}/.test(name.slice(4))) score -= 12;
+  if (/[a-z]{4,}[A-Z]{2,}$/.test(name)) score -= 22;
+  if (/(.)\1\1/i.test(name)) score -= 18;
+
+  if (/phoenixveritas|artifact|artefact|artefatto|artefato|chief|capo|kingdom|regno|reino|info|vai|go/i.test(name)) {
+    score -= 90;
+  }
 
   return score;
+}
+
+function detectArtifactColorFromCircle(
+  rootCanvas: HTMLCanvasElement,
+  circle: PixelCircle,
+  slot: ArtifactSlotKey
+): ArtifactColor {
+  const counts = countArtifactRingColorsFromCircle(rootCanvas, circle);
+  return chooseArtifactColorFromCounts(counts, slot);
+}
+
+function detectRuneColorFromCircle(
+  rootCanvas: HTMLCanvasElement,
+  circle: PixelCircle
+): ArtifactColor {
+  const counts = countRuneDotColorsFromCircle(rootCanvas, circle);
+  return chooseArtifactColorFromCounts(counts);
+}
+
+function countArtifactRingColorsFromCircle(
+  rootCanvas: HTMLCanvasElement,
+  circle: PixelCircle
+): Record<ArtifactColor, number> {
+  const context = rootCanvas.getContext("2d");
+  const empty: Record<ArtifactColor, number> = {
+    grey: 0,
+    green: 0,
+    blue: 0,
+    purple: 0,
+    gold: 0,
+    red: 0,
+  };
+
+  if (!context) {
+    return empty;
+  }
+
+  const sampleRect = {
+    x: clamp(circle.cx - circle.r * 1.10, 0, rootCanvas.width - 1),
+    y: clamp(circle.cy - circle.r * 1.10, 0, rootCanvas.height - 1),
+    width: clamp(circle.r * 2.20, 1, rootCanvas.width),
+    height: clamp(circle.r * 2.20, 1, rootCanvas.height),
+  };
+
+  const crop = cropPixelRect(rootCanvas, sampleRect);
+  const cropContext = crop.getContext("2d");
+
+  if (!cropContext) {
+    return empty;
+  }
+
+  const { width, height } = crop;
+  const imageData = cropContext.getImageData(0, 0, width, height);
+  const { data } = imageData;
+
+  const localCx = circle.cx - sampleRect.x;
+  const localCy = circle.cy - sampleRect.y;
+  const innerRadius = circle.r * 0.70;
+  const outerRadius = circle.r * 0.88;
+  const ringMid = (innerRadius + outerRadius) / 2;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const dx = x - localCx;
+      const dy = y - localCy;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < innerRadius || distance > outerRadius) {
+        continue;
+      }
+
+      const index = (y * width + x) * 4;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const a = data[index + 3];
+
+      if (a < 20) {
+        continue;
+      }
+
+      const { hue, saturation, value } = rgbToHsv(r, g, b);
+
+      if (value < 0.12) {
+        continue;
+      }
+
+      const ringWeight =
+        1.10 -
+        Math.abs(distance - ringMid) / Math.max(outerRadius - innerRadius, 1);
+
+      const weight = Math.max(ringWeight, 0.05);
+
+      if (saturation < 0.16 && value >= 0.22) {
+        empty.grey += weight;
+        continue;
+      }
+
+      if ((hue <= 18 || hue >= 342) && saturation >= 0.30 && value >= 0.22) {
+        empty.red += weight;
+        continue;
+      }
+
+      if (hue >= 72 && hue < 170 && saturation >= 0.24 && value >= 0.18) {
+        empty.green += weight;
+        continue;
+      }
+
+      if (hue >= 170 && hue < 250 && saturation >= 0.23 && value >= 0.18) {
+        empty.blue += weight;
+        continue;
+      }
+
+      if (hue >= 250 && hue < 320 && saturation >= 0.22 && value >= 0.18) {
+        empty.purple += weight;
+        continue;
+      }
+
+      if (hue >= 20 && hue < 70 && saturation >= 0.26 && value >= 0.22) {
+        empty.gold += weight;
+        continue;
+      }
+    }
+  }
+
+  return empty;
+}
+
+function countRuneDotColorsFromCircle(
+  rootCanvas: HTMLCanvasElement,
+  circle: PixelCircle
+): Record<ArtifactColor, number> {
+  const stripRect: PixelRect = {
+    x: clamp(circle.cx - circle.r * 0.86, 0, rootCanvas.width - 1),
+    y: clamp(circle.cy + circle.r * 0.72, 0, rootCanvas.height - 1),
+    width: clamp(circle.r * 1.72, 1, rootCanvas.width),
+    height: clamp(circle.r * 0.46, 1, rootCanvas.height),
+  };
+
+  const strip = cropPixelRect(rootCanvas, stripRect);
+  const empty: Record<ArtifactColor, number> = {
+    grey: 0,
+    green: 0,
+    blue: 0,
+    purple: 0,
+    gold: 0,
+    red: 0,
+  };
+
+  const width = strip.width;
+  const height = strip.height;
+
+  const dotCenters = [0.10, 0.30, 0.50, 0.70, 0.90];
+  const radius = Math.min(width / 12, height / 2.2);
+
+  for (const centerRatio of dotCenters) {
+    const cx = width * centerRatio;
+    const cy = height * 0.54;
+    const counts = countColorsInsideDisk(strip, cx, cy, radius);
+    const dotColor = chooseArtifactColorFromCounts(counts);
+    empty[dotColor] += 1;
+  }
+
+  return empty;
 }
 
 function detectArtifactColor(
   slotCanvas: HTMLCanvasElement,
   slot: ArtifactSlotKey
 ): ArtifactColor {
-  const counts = countArtifactRingColors(slotCanvas);
+  const counts = countArtifactBorderColors(slotCanvas);
   return chooseArtifactColorFromCounts(counts, slot);
 }
 
 function detectRuneColor(slotCanvas: HTMLCanvasElement): ArtifactColor {
-  const runeStrip = cropNormalized(slotCanvas, {
-    x: 0.10,
-    y: 0.72,
-    width: 0.80,
-    height: 0.22,
+  const strip = cropNormalized(slotCanvas, {
+    x: 0.12,
+    y: 0.74,
+    width: 0.76,
+    height: 0.18,
   });
 
-  const counts = countWeightedColors(runeStrip);
+  const counts = countRuneDotColors(strip);
   return chooseArtifactColorFromCounts(counts);
 }
 
@@ -639,50 +2531,50 @@ function chooseArtifactColorFromCounts(
   }
 
   const adjusted: Record<ArtifactColor, number> = {
-    grey: counts.grey * 0.4,
+    grey: counts.grey * 0.35,
     green: counts.green,
     blue: counts.blue,
-    purple: counts.purple * 1.03,
-    gold: counts.gold * 1.02,
+    purple: counts.purple * 1.02,
+    gold: counts.gold,
     red: counts.red * 1.03,
   };
 
   if (slot === "helmet") {
     if (
-      adjusted.red >= adjusted.gold * 0.62 &&
-      adjusted.red >= adjusted.purple * 0.90
+      adjusted.red >= adjusted.gold * 0.7 &&
+      adjusted.red >= adjusted.purple * 0.9
     ) {
       return "red";
     }
   }
 
-  const bestNonGrey = (
+  const ranked = (
     ["green", "blue", "purple", "gold", "red"] as ArtifactColor[]
   )
     .map((color) => ({ color, value: adjusted[color] }))
     .sort((a, b) => b.value - a.value);
 
-  const first = bestNonGrey[0];
-  const second = bestNonGrey[1];
+  const first = ranked[0];
+  const second = ranked[1];
 
   if (!first || first.value <= 0) {
     return "grey";
   }
 
   if (
-    first.color === "red" &&
+    first.color === "gold" &&
     second &&
-    second.color === "gold" &&
-    second.value >= first.value * 0.90
+    second.color === "red" &&
+    second.value >= first.value * 0.96
   ) {
     return slot === "helmet" ? "red" : "gold";
   }
 
   if (
-    first.color === "gold" &&
+    first.color === "red" &&
     second &&
-    second.color === "red" &&
-    second.value >= first.value * 0.94
+    second.color === "gold" &&
+    second.value >= first.value * 0.92
   ) {
     return slot === "helmet" ? "red" : "gold";
   }
@@ -690,7 +2582,7 @@ function chooseArtifactColorFromCounts(
   return first.color;
 }
 
-function countArtifactRingColors(
+function countArtifactBorderColors(
   slotCanvas: HTMLCanvasElement
 ): Record<ArtifactColor, number> {
   const context = slotCanvas.getContext("2d");
@@ -712,14 +2604,15 @@ function countArtifactRingColors(
   const { data } = imageData;
 
   const cx = width / 2;
-  const cy = height * 0.38;
+  const cy = height * 0.44;
   const minDimension = Math.min(width, height);
-  const innerRadius = minDimension * 0.16;
+  const innerRadius = minDimension * 0.25;
   const outerRadius = minDimension * 0.34;
+  const ringMid = (innerRadius + outerRadius) / 2;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (y > height * 0.70) {
+      if (y < height * 0.08 || y > height * 0.64) {
         continue;
       }
 
@@ -728,6 +2621,15 @@ function countArtifactRingColors(
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance < innerRadius || distance > outerRadius) {
+        continue;
+      }
+
+      const angle = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
+
+      const isSideArc =
+        angle <= 35 || angle >= 325 || (angle >= 145 && angle <= 215);
+
+      if (!isSideArc) {
         continue;
       }
 
@@ -747,10 +2649,14 @@ function countArtifactRingColors(
         continue;
       }
 
-      const ringWeight = 1.15 - Math.abs(distance - (innerRadius + outerRadius) / 2) / outerRadius;
+      const ringWeight =
+        1.10 -
+        Math.abs(distance - ringMid) /
+          Math.max(outerRadius - innerRadius, 1);
+
       const weight = Math.max(ringWeight, 0.05);
 
-      if (saturation < 0.18 && value >= 0.20) {
+      if (saturation < 0.16 && value >= 0.20) {
         empty.grey += weight;
         continue;
       }
@@ -760,12 +2666,12 @@ function countArtifactRingColors(
         continue;
       }
 
-      if (hue >= 70 && hue < 170 && saturation >= 0.25 && value >= 0.18) {
+      if (hue >= 70 && hue < 170 && saturation >= 0.24 && value >= 0.18) {
         empty.green += weight;
         continue;
       }
 
-      if (hue >= 170 && hue < 250 && saturation >= 0.24 && value >= 0.18) {
+      if (hue >= 170 && hue < 250 && saturation >= 0.23 && value >= 0.18) {
         empty.blue += weight;
         continue;
       }
@@ -775,7 +2681,7 @@ function countArtifactRingColors(
         continue;
       }
 
-      if (hue >= 20 && hue < 70 && saturation >= 0.26 && value >= 0.24) {
+      if (hue >= 20 && hue < 70 && saturation >= 0.26 && value >= 0.22) {
         empty.gold += weight;
         continue;
       }
@@ -785,7 +2691,48 @@ function countArtifactRingColors(
   return empty;
 }
 
-function countWeightedColors(canvas: HTMLCanvasElement): Record<ArtifactColor, number> {
+function countRuneDotColors(
+  stripCanvas: HTMLCanvasElement
+): Record<ArtifactColor, number> {
+  const context = stripCanvas.getContext("2d");
+  const empty: Record<ArtifactColor, number> = {
+    grey: 0,
+    green: 0,
+    blue: 0,
+    purple: 0,
+    gold: 0,
+    red: 0,
+  };
+
+  if (!context) {
+    return empty;
+  }
+
+  const width = stripCanvas.width;
+  const height = stripCanvas.height;
+
+  const dotCenters = [0.1, 0.3, 0.5, 0.7, 0.9];
+  const radius = Math.min(width / 11, height / 2.4);
+
+  for (const centerRatio of dotCenters) {
+    const cx = width * centerRatio;
+    const cy = height * 0.52;
+
+    const counts = countColorsInsideDisk(stripCanvas, cx, cy, radius);
+    const dotColor = chooseArtifactColorFromCounts(counts);
+
+    empty[dotColor] += 1;
+  }
+
+  return empty;
+}
+
+function countColorsInsideDisk(
+  canvas: HTMLCanvasElement,
+  cx: number,
+  cy: number,
+  radius: number
+): Record<ArtifactColor, number> {
   const context = canvas.getContext("2d");
   const empty: Record<ArtifactColor, number> = {
     grey: 0,
@@ -803,12 +2750,24 @@ function countWeightedColors(canvas: HTMLCanvasElement): Record<ArtifactColor, n
   const { width, height } = canvas;
   const imageData = context.getImageData(0, 0, width, height);
   const { data } = imageData;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const maxDistance = Math.sqrt(centerX * centerX + centerY * centerY);
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
+  for (
+    let y = Math.max(0, Math.floor(cy - radius));
+    y <= Math.min(height - 1, Math.ceil(cy + radius));
+    y += 1
+  ) {
+    for (
+      let x = Math.max(0, Math.floor(cx - radius));
+      x <= Math.min(width - 1, Math.ceil(cx + radius));
+      x += 1
+    ) {
+      const dx = x - cx;
+      const dy = y - cy;
+
+      if (dx * dx + dy * dy > radius * radius) {
+        continue;
+      }
+
       const index = (y * width + x) * 4;
       const r = data[index];
       const g = data[index + 1];
@@ -821,43 +2780,37 @@ function countWeightedColors(canvas: HTMLCanvasElement): Record<ArtifactColor, n
 
       const { hue, saturation, value } = rgbToHsv(r, g, b);
 
-      if (value < 0.12) {
+      if (value < 0.14) {
         continue;
       }
 
-      const dx = x - centerX;
-      const dy = y - centerY;
-      const distanceWeight =
-        1.15 - Math.min(Math.sqrt(dx * dx + dy * dy) / maxDistance, 1);
-      const weight = Math.max(distanceWeight, 0.05);
-
-      if (saturation < 0.18 && value >= 0.20) {
-        empty.grey += weight;
+      if (saturation < 0.16 && value >= 0.22) {
+        empty.grey += 1;
         continue;
       }
 
-      if ((hue <= 18 || hue >= 342) && saturation >= 0.30 && value >= 0.22) {
-        empty.red += weight;
+      if ((hue <= 18 || hue >= 342) && saturation >= 0.3 && value >= 0.22) {
+        empty.red += 1;
         continue;
       }
 
-      if (hue >= 70 && hue < 170 && saturation >= 0.25 && value >= 0.18) {
-        empty.green += weight;
+      if (hue >= 72 && hue < 170 && saturation >= 0.24 && value >= 0.18) {
+        empty.green += 1;
         continue;
       }
 
-      if (hue >= 170 && hue < 250 && saturation >= 0.24 && value >= 0.18) {
-        empty.blue += weight;
+      if (hue >= 170 && hue < 250 && saturation >= 0.23 && value >= 0.18) {
+        empty.blue += 1;
         continue;
       }
 
       if (hue >= 250 && hue < 320 && saturation >= 0.22 && value >= 0.18) {
-        empty.purple += weight;
+        empty.purple += 1;
         continue;
       }
 
-      if (hue >= 20 && hue < 70 && saturation >= 0.26 && value >= 0.24) {
-        empty.gold += weight;
+      if (hue >= 20 && hue < 70 && saturation >= 0.26 && value >= 0.22) {
+        empty.gold += 1;
         continue;
       }
     }
@@ -900,24 +2853,88 @@ function cropNormalized(
   source: HTMLCanvasElement,
   region: NormalizedRegion
 ): HTMLCanvasElement {
+  return cropPixels(
+    source,
+    region.x * source.width,
+    region.y * source.height,
+    region.width * source.width,
+    region.height * source.height
+  );
+}
+
+function cropRelativeToRect(
+  source: HTMLCanvasElement,
+  baseRect: PixelRect,
+  relative: NormalizedRegion
+): HTMLCanvasElement {
+  return cropPixels(
+    source,
+    baseRect.x + relative.x * baseRect.width,
+    baseRect.y + relative.y * baseRect.height,
+    relative.width * baseRect.width,
+    relative.height * baseRect.height
+  );
+}
+
+function cropPixelRect(
+  source: HTMLCanvasElement,
+  rect: PixelRect
+): HTMLCanvasElement {
+  return cropPixels(source, rect.x, rect.y, rect.width, rect.height);
+}
+
+function expandPixelRect(
+  source: HTMLCanvasElement,
+  rect: PixelRect,
+  padX: number,
+  padTop: number,
+  padBottom: number
+): PixelRect {
+  const x = clamp(Math.floor(rect.x - padX), 0, source.width - 1);
+  const y = clamp(Math.floor(rect.y - padTop), 0, source.height - 1);
+
+  const right = clamp(
+    Math.ceil(rect.x + rect.width + padX),
+    x + 1,
+    source.width
+  );
+
+  const bottom = clamp(
+    Math.ceil(rect.y + rect.height + padBottom),
+    y + 1,
+    source.height
+  );
+
+  return {
+    x,
+    y,
+    width: right - x,
+    height: bottom - y,
+  };
+}
+
+function cropPixels(
+  source: HTMLCanvasElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  const sourceWidth = source.width;
-  const sourceHeight = source.height;
-
-  const sx = Math.max(Math.floor(region.x * sourceWidth), 0);
-  const sy = Math.max(Math.floor(region.y * sourceHeight), 0);
-  const sw = Math.max(Math.floor(region.width * sourceWidth), 1);
-  const sh = Math.max(Math.floor(region.height * sourceHeight), 1);
-
-  canvas.width = sw;
-  canvas.height = sh;
+  canvas.width = Math.max(Math.floor(width), 1);
+  canvas.height = Math.max(Math.floor(height), 1);
 
   const context = canvas.getContext("2d");
   if (!context) {
     return canvas;
   }
 
-  context.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh);
+  const sx = clamp(Math.floor(x), 0, source.width - 1);
+  const sy = clamp(Math.floor(y), 0, source.height - 1);
+  const sw = clamp(Math.floor(width), 1, source.width - sx);
+  const sh = clamp(Math.floor(height), 1, source.height - sy);
+
+  context.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -976,7 +2993,7 @@ function buildYellowTextCanvas(sourceCanvas: HTMLCanvasElement) {
     const { hue, saturation, value } = rgbToHsv(r, g, b);
 
     const isYellow =
-      hue >= 28 && hue <= 68 && saturation >= 0.30 && value >= 0.46;
+      hue >= 26 && hue <= 68 && saturation >= 0.28 && value >= 0.44;
 
     const out = isYellow ? 0 : 255;
 
@@ -1018,7 +3035,8 @@ function buildWhiteTextCanvas(sourceCanvas: HTMLCanvasElement) {
     const { saturation } = rgbToHsv(r, g, b);
     const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-    const isWhiteText = (luminance >= 160 && saturation <= 0.35) || luminance >= 215;
+    const isWhiteText =
+      (luminance >= 160 && saturation <= 0.35) || luminance >= 215;
     const out = isWhiteText ? 0 : 255;
 
     data[index] = out;
@@ -1031,18 +3049,30 @@ function buildWhiteTextCanvas(sourceCanvas: HTMLCanvasElement) {
   return output;
 }
 
-async function recognizeText(
+async function recognizeDetailed(
   source: HTMLCanvasElement,
   options?: {
     whitelist?: string;
+    pageSegMode?: "6" | "7";
   }
-) {
+): Promise<OCRResultLite> {
   const result = await Tesseract.recognize(source, OCR_LANGUAGE, {
-    tessedit_pageseg_mode: "7",
+    tessedit_pageseg_mode: options?.pageSegMode ?? "7",
     tessedit_char_whitelist: options?.whitelist ?? "",
   } as never);
 
-  return result.data.text ?? "";
+  const words = ((result.data.words ?? []) as Array<{
+    text?: string;
+    confidence?: number;
+  }>).map((word) => ({
+    text: (word.text ?? "").trim(),
+    confidence: Number.isFinite(word.confidence) ? Number(word.confidence) : 0,
+  }));
+
+  return {
+    text: result.data.text ?? "",
+    words,
+  };
 }
 
 function rgbToHsv(r: number, g: number, b: number) {
@@ -1078,6 +3108,10 @@ function rgbToHsv(r: number, g: number, b: number) {
   return { hue, saturation, value };
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function getSlotLabel(slot: ArtifactSlotKey) {
   switch (slot) {
     case "sword":
@@ -1093,6 +3127,85 @@ function getSlotLabel(slot: ArtifactSlotKey) {
     case "pants":
       return "Pants";
   }
+}
+
+function buildDebugCrops(
+  rootCanvas: HTMLCanvasElement,
+  layout: LayoutModel,
+  chiefName: string,
+  individualMight: number,
+  slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>
+): DebugCropResult[] {
+  const results: DebugCropResult[] = [];
+
+const detectedNameRect = findYellowNameRect(rootCanvas);
+
+const nameCrop = detectedNameRect
+  ? cropPixelRect(rootCanvas, detectedNameRect)
+  : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
+      x: 0.16,
+      y: 0.05,
+      width: 0.64,
+      height: 0.16,
+    });
+
+const { individualRect } = findMightLineRects(rootCanvas, layout.topInfoRect);
+
+const individualCrop = individualRect
+  ? cropPixelRect(rootCanvas, individualRect)
+  : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
+      x: 0.28,
+      y: 0.32,
+      width: 0.56,
+      height: 0.12,
+    });
+
+  results.push({
+    id: "name",
+    label: "Name region",
+    imageUrl: canvasToDataUrl(nameCrop),
+    meta: `Detected: ${chiefName}`,
+  });
+
+  results.push({
+    id: "individual-might",
+    label: "Individual Might region",
+    imageUrl: canvasToDataUrl(individualCrop),
+    meta: `Detected: ${formatNumber(individualMight)}`,
+  });
+
+  results.push({
+    id: "artifact-title",
+    label: "Artifact title region",
+    imageUrl: canvasToDataUrl(cropPixelRect(rootCanvas, layout.artifactTitleRect)),
+  });
+
+  results.push({
+    id: "artifact-grid",
+    label: "Artifact grid region",
+    imageUrl: canvasToDataUrl(cropPixelRect(rootCanvas, layout.artifactGridRect)),
+  });
+
+  for (const slot of SLOT_ORDER) {
+    const circle = layout.artifactCircles[slot];
+    const crop = cropPixelRect(rootCanvas, layout.slotRects[slot]);
+    const entry = slots[slot];
+
+    results.push({
+      id: slot,
+      label: `${capitalize(slot)} slot`,
+      imageUrl: canvasToDataUrl(crop),
+      meta: circle
+        ? `Artifact: ${capitalize(entry.color)} | Level: ${entry.level} | Rune: ${capitalize(entry.runeColor)} | Circle: (${Math.round(circle.cx)}, ${Math.round(circle.cy)}) r=${Math.round(circle.r)}`
+        : `Artifact: ${capitalize(entry.color)} | Level: ${entry.level} | Rune: ${capitalize(entry.runeColor)}`,
+    });
+  }
+
+  return results;
+}
+
+function canvasToDataUrl(canvas: HTMLCanvasElement) {
+  return canvas.toDataURL("image/png");
 }
 
 function capitalize(value: string) {
