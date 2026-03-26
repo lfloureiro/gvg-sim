@@ -33,7 +33,7 @@ type BrowserWindowWithDirectoryPicker = Window & {
 };
 
 const DISCORD_WEBHOOK_URL =
-  "https://discord.com/api/webhooks/1486784864635195534/yibQrsnBaS3KXQxrSa-RCldQEgTxzLpq-KO07LBuzZ-vQEqXp_qifyejRShTqlOiEOm8";
+  "https://discord.com/api/webhooks/1486791065095901195/NAOqjAO5sSwWo5nKu8xuHegyb3eXfIt4pC4zXPX_fhD1xkj9TqnIZLKxR1sUYPaTSTK9";
 
 export default function EnemyTribeAnalysisScreen({
   onBack,
