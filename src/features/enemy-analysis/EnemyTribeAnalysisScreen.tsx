@@ -32,6 +32,9 @@ type BrowserWindowWithDirectoryPicker = Window & {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 };
 
+const DISCORD_WEBHOOK_URL =
+  "https://discord.com/api/webhooks/1486784864635195534/yibQrsnBaS3KXQxrSa-RCldQEgTxzLpq-KO07LBuzZ-vQEqXp_qifyejRShTqlOiEOm8";
+
 export default function EnemyTribeAnalysisScreen({
   onBack,
   language,
@@ -147,19 +150,35 @@ export default function EnemyTribeAnalysisScreen({
         </button>
 
         {rows.length ? (
-          <button
-            className="primary-button"
-            onClick={() =>
-              copyEnemyAnalysisReport(
-                rows,
-                sortField,
-                selectedFolderLabel || "enemy-analysis",
-                t
-              )
-            }
-          >
-            Copy report
-          </button>
+          <>
+            <button
+              className="primary-button"
+              onClick={() =>
+                copyEnemyAnalysisReport(
+                  rows,
+                  sortField,
+                  selectedFolderLabel || "enemy-analysis",
+                  t
+                )
+              }
+            >
+              Copy report
+            </button>
+
+            <button
+              className="primary-button"
+              onClick={() =>
+                sendEnemyAnalysisReportToDiscord(
+                  rows,
+                  sortField,
+                  selectedFolderLabel || "enemy-analysis",
+                  t
+                )
+              }
+            >
+              Send to Discord
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -407,6 +426,81 @@ async function copyEnemyAnalysisReport(
     fallbackCopyText(report);
     alert("Report copied to clipboard.");
   }
+}
+
+async function sendEnemyAnalysisReportToDiscord(
+  rows: EnemyAnalysisRow[],
+  sortField: SortField,
+  folderLabel: string,
+  t: ReturnType<typeof getTranslation>
+) {
+  const report = buildEnemyAnalysisTextReport(rows, sortField, folderLabel, t);
+  const chunks = splitDiscordMessage(report, 1900);
+
+  try {
+    for (const chunk of chunks) {
+      const response = await fetch(`${DISCORD_WEBHOOK_URL}?wait=true`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: chunk,
+          allowed_mentions: { parse: [] },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Discord webhook failed with ${response.status}`);
+      }
+    }
+
+    alert("Report sent to Discord.");
+  } catch {
+    alert("Could not send the report to Discord.");
+  }
+}
+
+function splitDiscordMessage(text: string, maxLength = 1900) {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const lines = text.split("\n");
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const line of lines) {
+    const next = current ? `${current}\n${line}` : line;
+
+    if (next.length <= maxLength) {
+      current = next;
+      continue;
+    }
+
+    if (current) {
+      chunks.push(current);
+    }
+
+    if (line.length <= maxLength) {
+      current = line;
+      continue;
+    }
+
+    let start = 0;
+    while (start < line.length) {
+      chunks.push(line.slice(start, start + maxLength));
+      start += maxLength;
+    }
+
+    current = "";
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks;
 }
 
 function buildEnemyAnalysisTextReport(
