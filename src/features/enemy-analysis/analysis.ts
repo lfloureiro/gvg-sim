@@ -93,6 +93,7 @@ export type LayoutModel = {
   artifactGridRect: PixelRect;
   slotRects: Record<ArtifactSlotKey, PixelRect>;
   artifactCircles: Partial<Record<ArtifactSlotKey, PixelCircle>>;
+  nameRect: PixelRect | null;
 };
 
 export type DebugCropResult = {
@@ -370,7 +371,11 @@ export async function analyzeEnemyImages(
         step: "Reading chief name",
       });
 
-      const chiefName = await extractChiefName(analysisCanvas, layout.topInfoRect);
+      const chiefName = await extractChiefName(
+        analysisCanvas,
+        layout.topInfoRect,
+        layout.nameRect
+      );
 
       onProgress?.({
         current: index + 1,
@@ -421,7 +426,11 @@ export async function analyzeEnemyImageDebug(
   const rootCanvas = await fileToCanvas(file);
   const analysisCanvas = buildAnalysisCanvas(rootCanvas);
   const layout = await detectLayout(analysisCanvas);
-  const chiefName = await extractChiefName(analysisCanvas, layout.topInfoRect);
+  const chiefName = await extractChiefName(
+    analysisCanvas,
+    layout.topInfoRect,
+    layout.nameRect
+  );
   const { individualMight, heroMight } = await extractMightPair(
     analysisCanvas,
     layout.topInfoRect
@@ -523,12 +532,123 @@ function compareRows(
   return left.chiefName.localeCompare(right.chiefName);
 }
 
+async function detectChiefNameRect(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+): Promise<PixelRect | null> {
+  const yellowRect = findYellowNameRect(rootCanvas);
+  if (yellowRect) {
+    return yellowRect;
+  }
+
+  return await findNameRectByOCRFallback(rootCanvas, infoRect);
+}
+
+async function findNameRectByOCRFallback(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+): Promise<PixelRect | null> {
+  const searchCrop = cropRelativeToRect(rootCanvas, infoRect, {
+    x: 0.08,
+    y: 0.02,
+    width: 0.80,
+    height: 0.24,
+  });
+
+  const variants = [
+    upscaleCanvas(buildYellowTextCanvas(searchCrop), 5),
+    upscaleCanvas(searchCrop, 4),
+  ];
+
+  let best:
+    | {
+        text: string;
+        confidence: number;
+        rect: PixelRect;
+        score: number;
+      }
+    | null = null;
+
+  for (const variant of variants) {
+    const ocr = await recognizeDetailed(variant, {
+      whitelist:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+      pageSegMode: "7",
+    });
+
+    const words = (ocr.words ?? []) as OCRWord[];
+
+    for (const word of words) {
+      const cleaned = cleanLeadingNoise(word.text ?? "");
+
+      if (!isLikelyChiefNameToken(cleaned)) {
+        continue;
+      }
+
+      const confidence = Number.isFinite(word.confidence) ? word.confidence : 0;
+      const score = scoreNameCandidate(cleaned) + confidence * 0.7;
+
+      const approxRect: PixelRect = {
+        x: infoRect.x + infoRect.width * 0.12,
+        y: infoRect.y + infoRect.height * 0.03,
+        width: infoRect.width * 0.60,
+        height: infoRect.height * 0.18,
+      };
+
+      if (!best || score > best.score) {
+        best = {
+          text: cleaned,
+          confidence,
+          rect: approxRect,
+          score,
+        };
+      }
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  return expandPixelRect(rootCanvas, best.rect, 8, 8, 10);
+}
+
+function isLikelyChiefNameToken(value: string) {
+  if (value === "Unknown") {
+    return false;
+  }
+
+  if (!/[A-Za-z]/.test(value)) {
+    return false;
+  }
+
+  if (value.length < 3 || value.length > 22) {
+    return false;
+  }
+
+  if (
+    /kingdom|regno|reino|artifact|artefact|artefatto|artefato|chief|capo|info|go|vai/i.test(
+      value
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 async function detectLayout(rootCanvas: HTMLCanvasElement): Promise<LayoutModel> {
   const artifactTitleRect = await findArtifactTitleRect(rootCanvas);
+  let topInfoRect = buildTopInfoRect(rootCanvas, artifactTitleRect);
+  const nameRect = await detectChiefNameRect(rootCanvas, topInfoRect);
+
+  if (nameRect) {
+    topInfoRect = buildTopInfoRectFromName(rootCanvas, nameRect);
+  }
+
   const artifactGridRect = buildArtifactGridRect(rootCanvas, artifactTitleRect);
   const artifactCircles = detectArtifactCircles(rootCanvas, artifactGridRect);
   const slotRects = buildSlotRects(rootCanvas, artifactGridRect, artifactCircles);
-  const topInfoRect = buildTopInfoRect(rootCanvas, artifactTitleRect);
 
   return {
     topInfoRect,
@@ -536,6 +656,7 @@ async function detectLayout(rootCanvas: HTMLCanvasElement): Promise<LayoutModel>
     artifactGridRect,
     slotRects,
     artifactCircles,
+    nameRect,
   };
 }
 
@@ -729,10 +850,10 @@ function buildTopInfoRect(
 
 function findYellowNameRect(rootCanvas: HTMLCanvasElement): PixelRect | null {
   const searchRegion: NormalizedRegion = {
-    x: 0.18,
-    y: 0.08,
-    width: 0.72,
-    height: 0.18,
+    x: 0.08,
+    y: 0.05,
+    width: 0.84,
+    height: 0.22,
   };
 
   const search = cropNormalized(rootCanvas, searchRegion);
@@ -785,7 +906,7 @@ function findYellowNameRect(rootCanvas: HTMLCanvasElement): PixelRect | null {
     }
   }
 
-  if (bestStart < 0 || bestEnd < 0 || bestScore < width * 4) {
+  if (bestStart < 0 || bestEnd < 0 || bestScore < width * 2.8) {
     return null;
   }
 
@@ -1019,9 +1140,10 @@ function buildTopInfoRectFromName(
 
 async function extractChiefName(
   rootCanvas: HTMLCanvasElement,
-  infoRect: PixelRect
+  infoRect: PixelRect,
+  providedNameRect?: PixelRect | null
 ) {
-  const nameRect = findYellowNameRect(rootCanvas);
+  const nameRect = providedNameRect ?? (await detectChiefNameRect(rootCanvas, infoRect));
   const candidates: NameCandidate[] = [];
 
   if (nameRect) {
@@ -1165,6 +1287,7 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
   let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const value of values) {
+    const lower = value.toLowerCase();
     let score = (aggregated.get(value) ?? 0) * 100 + scoreNameCandidate(value);
 
     for (const other of values) {
@@ -1172,14 +1295,35 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
         continue;
       }
 
-      const prefix = commonPrefixLength(value.toLowerCase(), other.toLowerCase());
+      const otherLower = other.toLowerCase();
+      const prefix = commonPrefixLength(lower, otherLower);
       const minLen = Math.min(value.length, other.length);
 
-      if (prefix >= Math.max(5, Math.floor(minLen * 0.72))) {
-        if (value.length <= other.length) {
-          score += 18 + prefix * 1.5;
+      if (prefix >= Math.max(4, Math.floor(minLen * 0.65))) {
+        if (value.length < other.length) {
+          score -= 16 + (other.length - value.length) * 2.5;
         } else {
-          score -= 10 + (value.length - other.length) * 2.2;
+          score += 12;
+        }
+      }
+
+      if (
+        otherLower.endsWith(lower) &&
+        other.length >= value.length + 2
+      ) {
+        score -= 28;
+      }
+
+      if (
+        lower.endsWith(otherLower) &&
+        value.length >= other.length + 2
+      ) {
+        score += 18;
+      }
+
+      if (/^phvt/i.test(value) && value.length >= other.length + 2) {
+        if (lower.endsWith(otherLower) || otherLower.endsWith(lower)) {
+          score += 22;
         }
       }
     }
@@ -2301,6 +2445,10 @@ function cleanLeadingNoise(name: string) {
     return "Unknown";
   }
 
+  if (cleaned.length === 3 && !/^phv/i.test(cleaned)) {
+    return "Unknown";
+  }
+
   return cleaned;
 }
 
@@ -3138,7 +3286,7 @@ function buildDebugCrops(
 ): DebugCropResult[] {
   const results: DebugCropResult[] = [];
 
-const detectedNameRect = findYellowNameRect(rootCanvas);
+const detectedNameRect = layout.nameRect;
 
 const nameCrop = detectedNameRect
   ? cropPixelRect(rootCanvas, detectedNameRect)
