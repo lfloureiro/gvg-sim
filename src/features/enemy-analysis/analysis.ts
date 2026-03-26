@@ -325,14 +325,47 @@ function isArtifactTitleToken(value: string) {
   );
 }
 
-function isYellowNamePixel(r: number, g: number, b: number, a: number) {
+function isYellowNamePixel(
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  mode: "soft" | "strict" = "soft"
+) {
   if (a < 20) {
     return false;
   }
 
   const { hue, saturation, value } = rgbToHsv(r, g, b);
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  const blueSuppression = Math.min(r, g) - b;
+  const rgGap = Math.abs(r - g);
 
-  return hue >= 28 && hue <= 68 && saturation >= 0.34 && value >= 0.42;
+  if (mode === "strict") {
+    return (
+      hue >= 34 &&
+      hue <= 62 &&
+      saturation >= 0.46 &&
+      value >= 0.58 &&
+      chroma >= 28 &&
+      blueSuppression >= 28 &&
+      rgGap <= 92 &&
+      r >= 110 &&
+      g >= 110
+    );
+  }
+
+  return (
+    hue >= 30 &&
+    hue <= 66 &&
+    saturation >= 0.32 &&
+    value >= 0.44 &&
+    chroma >= 20 &&
+    blueSuppression >= 16 &&
+    rgGap <= 116 &&
+    r >= 90 &&
+    g >= 90
+  );
 }
 
 export async function analyzeEnemyImages(
@@ -556,8 +589,8 @@ async function findNameRectByOCRFallback(
   });
 
   const variants = [
-    upscaleCanvas(buildYellowTextCanvas(searchCrop), 5),
-    upscaleCanvas(searchCrop, 4),
+    upscaleCanvas(buildYellowTextCanvas(searchCrop, "strict"), 6),
+    upscaleCanvas(buildYellowTextCanvas(searchCrop, "soft"), 5),
   ];
 
   let best:
@@ -572,7 +605,7 @@ async function findNameRectByOCRFallback(
   for (const variant of variants) {
     const ocr = await recognizeDetailed(variant, {
       whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
       pageSegMode: "7",
     });
 
@@ -1163,24 +1196,31 @@ async function extractChiefName(
     );
 
     for (const crop of [exactCrop, paddedCrop, tallCrop]) {
-      const yellowPrepared = upscaleCanvas(buildYellowTextCanvas(crop), 5);
-      const rawPrepared = upscaleCanvas(crop, 4);
+      const yellowStrictPrepared = upscaleCanvas(
+        buildYellowTextCanvas(crop, "strict"),
+        6
+      );
 
-      const [yellowOcr, rawOcr] = await Promise.all([
-        recognizeDetailed(yellowPrepared, {
+      const yellowSoftPrepared = upscaleCanvas(
+        buildYellowTextCanvas(crop, "soft"),
+        5
+      );
+
+      const [yellowStrictOcr, yellowSoftOcr] = await Promise.all([
+        recognizeDetailed(yellowStrictPrepared, {
           whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
           pageSegMode: "7",
         }),
-        recognizeDetailed(rawPrepared, {
+        recognizeDetailed(yellowSoftPrepared, {
           whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
           pageSegMode: "7",
         }),
       ]);
 
-      candidates.push(...extractNameCandidatesFromOCR(yellowOcr, 1.25));
-      candidates.push(...extractNameCandidatesFromOCR(rawOcr, 1.0));
+      candidates.push(...extractNameCandidatesFromOCR(yellowStrictOcr, 1.35));
+      candidates.push(...extractNameCandidatesFromOCR(yellowSoftOcr, 1.15));
     }
   }
 
@@ -1192,14 +1232,31 @@ async function extractChiefName(
       height: 0.18,
     });
 
-    const fallbackPrepared = upscaleCanvas(buildYellowTextCanvas(fallbackCrop), 5);
-    const fallbackOcr = await recognizeDetailed(fallbackPrepared, {
-      whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_- []",
-      pageSegMode: "7",
-    });
+    const fallbackStrictPrepared = upscaleCanvas(
+      buildYellowTextCanvas(fallbackCrop, "strict"),
+      6
+    );
 
-    candidates.push(...extractNameCandidatesFromOCR(fallbackOcr, 1.0));
+    const fallbackSoftPrepared = upscaleCanvas(
+      buildYellowTextCanvas(fallbackCrop, "soft"),
+      5
+    );
+
+    const [fallbackStrictOcr, fallbackSoftOcr] = await Promise.all([
+      recognizeDetailed(fallbackStrictPrepared, {
+        whitelist:
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+        pageSegMode: "7",
+      }),
+      recognizeDetailed(fallbackSoftPrepared, {
+        whitelist:
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+        pageSegMode: "7",
+      }),
+    ]);
+
+    candidates.push(...extractNameCandidatesFromOCR(fallbackStrictOcr, 1.2));
+    candidates.push(...extractNameCandidatesFromOCR(fallbackSoftOcr, 1.0));
   }
 
   return chooseBestChiefName(candidates);
@@ -2425,11 +2482,6 @@ function cleanLeadingNoise(name: string) {
     .replace(/[^A-Za-z0-9]+$/, "")
     .replace(/\s+/g, "");
 
-  const phvtIndex = cleaned.toLowerCase().indexOf("phvt");
-  if (phvtIndex > 0) {
-    cleaned = cleaned.slice(phvtIndex);
-  }
-
   cleaned = cleaned.replace(/^[Il|!]+(?=[A-Za-z])/, "");
   cleaned = cleaned.replace(/^[^A-Za-z]+(?=[A-Za-z])/, "");
 
@@ -2442,10 +2494,6 @@ function cleanLeadingNoise(name: string) {
   }
 
   if (cleaned.length < 3 || cleaned.length > 22) {
-    return "Unknown";
-  }
-
-  if (cleaned.length === 3 && !/^phv/i.test(cleaned)) {
     return "Unknown";
   }
 
@@ -2470,13 +2518,12 @@ function scoreNameCandidate(name: string) {
   if (digits > 3) score -= 20;
   if (letters < 4) score -= 25;
   if (uppers >= 1 && lowers >= 1) score += 8;
-  if (/^phvt/i.test(name)) score += 14;
 
   if (/[A-Z]{3,}/.test(name.slice(4))) score -= 12;
   if (/[a-z]{4,}[A-Z]{2,}$/.test(name)) score -= 22;
   if (/(.)\1\1/i.test(name)) score -= 18;
 
-  if (/phoenixveritas|artifact|artefact|artefatto|artefato|chief|capo|kingdom|regno|reino|info|vai|go/i.test(name)) {
+  if (/artifact|artefact|artefatto|artefato|chief|capo|kingdom|regno|reino|info|vai|go/i.test(name)) {
     score -= 90;
   }
 
@@ -3104,7 +3151,92 @@ function upscaleCanvas(
   return canvas;
 }
 
-function buildYellowTextCanvas(sourceCanvas: HTMLCanvasElement) {
+function cleanupBinaryTextMask(
+  sourceCanvas: HTMLCanvasElement,
+  passes = 1
+): HTMLCanvasElement {
+  let current = sourceCanvas;
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    const output = document.createElement("canvas");
+    output.width = current.width;
+    output.height = current.height;
+
+    const srcCtx = current.getContext("2d");
+    const outCtx = output.getContext("2d");
+
+    if (!srcCtx || !outCtx) {
+      return current;
+    }
+
+    const srcImage = srcCtx.getImageData(0, 0, current.width, current.height);
+    const dstImage = outCtx.createImageData(current.width, current.height);
+
+    const src = srcImage.data;
+    const dst = dstImage.data;
+    const width = current.width;
+    const height = current.height;
+
+    function isBlackAt(x: number, y: number) {
+      const index = (y * width + x) * 4;
+      return src[index] < 128;
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = (y * width + x) * 4;
+
+        if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
+          const value = src[index];
+          dst[index] = value;
+          dst[index + 1] = value;
+          dst[index + 2] = value;
+          dst[index + 3] = 255;
+          continue;
+        }
+
+        let blackNeighbours = 0;
+
+        for (let oy = -1; oy <= 1; oy += 1) {
+          for (let ox = -1; ox <= 1; ox += 1) {
+            if (ox === 0 && oy === 0) {
+              continue;
+            }
+
+            if (isBlackAt(x + ox, y + oy)) {
+              blackNeighbours += 1;
+            }
+          }
+        }
+
+        const currentBlack = src[index] < 128;
+        let outBlack = currentBlack;
+
+        if (currentBlack && blackNeighbours <= 1) {
+          outBlack = false;
+        } else if (!currentBlack && blackNeighbours >= 6) {
+          outBlack = true;
+        }
+
+        const out = outBlack ? 0 : 255;
+        dst[index] = out;
+        dst[index + 1] = out;
+        dst[index + 2] = out;
+        dst[index + 3] = 255;
+      }
+    }
+
+    outCtx.putImageData(dstImage, 0, 0);
+    current = output;
+  }
+
+  return current;
+}
+
+function buildYellowTextCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  mode: "soft" | "strict" = "strict"
+) {
   const output = document.createElement("canvas");
   output.width = sourceCanvas.width;
   output.height = sourceCanvas.height;
@@ -3128,21 +3260,9 @@ function buildYellowTextCanvas(sourceCanvas: HTMLCanvasElement) {
     const r = data[index];
     const g = data[index + 1];
     const b = data[index + 2];
-    const alpha = data[index + 3];
+    const a = data[index + 3];
 
-    if (alpha < 10) {
-      data[index] = 255;
-      data[index + 1] = 255;
-      data[index + 2] = 255;
-      data[index + 3] = 255;
-      continue;
-    }
-
-    const { hue, saturation, value } = rgbToHsv(r, g, b);
-
-    const isYellow =
-      hue >= 26 && hue <= 68 && saturation >= 0.28 && value >= 0.44;
-
+    const isYellow = isYellowNamePixel(r, g, b, a, mode);
     const out = isYellow ? 0 : 255;
 
     data[index] = out;
@@ -3152,7 +3272,7 @@ function buildYellowTextCanvas(sourceCanvas: HTMLCanvasElement) {
   }
 
   outCtx.putImageData(imageData, 0, 0);
-  return output;
+  return cleanupBinaryTextMask(output, 1);
 }
 
 function buildWhiteTextCanvas(sourceCanvas: HTMLCanvasElement) {
