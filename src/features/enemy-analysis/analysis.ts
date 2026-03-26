@@ -66,6 +66,37 @@ type NameCandidate = {
   weight: number;
 };
 
+type NumericCandidate = {
+  value: string;
+  weight: number;
+  masked: boolean;
+  trimLeft: number;
+  pageSegMode: "6" | "7";
+};
+
+type NumericCandidateGroup = {
+  value: string;
+  totalWeight: number;
+  hits: number;
+  maskedHits: number;
+  trimTotal: number;
+  psm6Hits: number;
+  psm7Hits: number;
+  sources: string[];
+  score: number;
+};
+
+type NumericReadDebug = {
+  value: number;
+  candidateLines: string[];
+};
+
+type MightPairDebug = {
+  individualMight: number;
+  heroMight: number;
+  candidateLines: string[];
+};
+
 export type PixelRect = {
   x: number;
   y: number;
@@ -116,6 +147,7 @@ export type DebugAnalysisResult = {
   confidence: Confidence;
   slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
   crops: DebugCropResult[];
+  mightDebugLines?: string[];
 };
 
 const OCR_LANGUAGE = "eng";
@@ -338,7 +370,7 @@ function isYellowNamePixel(
 
   const { hue, saturation, value } = rgbToHsv(r, g, b);
   const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-  const blueSuppression = Math.min(r, g) - b;
+  const blueGap = Math.min(r, g) - b;
   const rgGap = Math.abs(r - g);
 
   if (mode === "strict") {
@@ -348,7 +380,7 @@ function isYellowNamePixel(
       saturation >= 0.46 &&
       value >= 0.58 &&
       chroma >= 28 &&
-      blueSuppression >= 28 &&
+      blueGap >= 28 &&
       rgGap <= 92 &&
       r >= 110 &&
       g >= 110
@@ -361,7 +393,7 @@ function isYellowNamePixel(
     saturation >= 0.32 &&
     value >= 0.44 &&
     chroma >= 20 &&
-    blueSuppression >= 16 &&
+    blueGap >= 16 &&
     rgGap <= 116 &&
     r >= 90 &&
     g >= 90
@@ -464,10 +496,12 @@ export async function analyzeEnemyImageDebug(
     layout.topInfoRect,
     layout.nameRect
   );
-  const { individualMight, heroMight } = await extractMightPair(
+
+  const mightDebug = await extractMightPairDebug(
     analysisCanvas,
     layout.topInfoRect
   );
+
   const slots = analyzeSlots(analysisCanvas, layout);
   const armyScores = buildArmyScores(slots);
   const armyType = decideArmyType(armyScores, slots);
@@ -480,17 +514,19 @@ export async function analyzeEnemyImageDebug(
     imageHeight: analysisCanvas.height,
     layout,
     chiefName,
-    individualMight,
-    heroMight,
+    individualMight: mightDebug.individualMight,
+    heroMight: mightDebug.heroMight,
     armyType,
     confidence,
     slots,
+    mightDebugLines: mightDebug.candidateLines,
     crops: buildDebugCrops(
       analysisCanvas,
       layout,
       chiefName,
-      individualMight,
-      slots
+      mightDebug.individualMight,
+      slots,
+      mightDebug.candidateLines
     ),
   };
 }
@@ -1109,23 +1145,37 @@ function findMightLineRects(
     return { individualRect: null, heroRect: null };
   }
 
-  const topBands = [...bands]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 2)
+  const bestBandScore = Math.max(...bands.map((band) => band.score));
+  const orderedStrongBands = bands
+    .filter((band) => band.score >= bestBandScore * 0.42)
     .sort((a, b) => a.start - b.start);
 
-  const [firstBand, secondBand] = topBands;
+  const orderedAllBands = [...bands].sort((a, b) => a.start - b.start);
 
-  function bandToRect(band: { start: number; end: number } | undefined): PixelRect | null {
+  const firstBand = orderedStrongBands[0] ?? orderedAllBands[0];
+  const secondBand = orderedStrongBands[1] ?? orderedAllBands[1];
+
+  function bandToRect(
+    band: { start: number; end: number } | undefined
+  ): PixelRect | null {
     if (!band) {
       return null;
     }
 
+    const localY = Math.max(band.start - 2, 0);
+    const localHeight = Math.max(
+      Math.min(band.end - band.start + 5, searchRect.height - localY),
+      1
+    );
+
+    const leftPad = Math.floor(searchRect.width * 0.16);
+    const rightPad = Math.floor(searchRect.width * 0.03);
+
     return {
-      x: searchRect.x,
-      y: searchRect.y + Math.max(band.start - 4, 0),
-      width: searchRect.width,
-      height: Math.min(band.end - band.start + 9, searchRect.height),
+      x: searchRect.x + leftPad,
+      y: searchRect.y + localY,
+      width: Math.max(searchRect.width - leftPad - rightPad, 1),
+      height: localHeight,
     };
   }
 
@@ -1196,31 +1246,31 @@ async function extractChiefName(
     );
 
     for (const crop of [exactCrop, paddedCrop, tallCrop]) {
-      const yellowStrictPrepared = upscaleCanvas(
+      const strictPrepared = upscaleCanvas(
         buildYellowTextCanvas(crop, "strict"),
         6
       );
 
-      const yellowSoftPrepared = upscaleCanvas(
+      const softPrepared = upscaleCanvas(
         buildYellowTextCanvas(crop, "soft"),
         5
       );
 
-      const [yellowStrictOcr, yellowSoftOcr] = await Promise.all([
-        recognizeDetailed(yellowStrictPrepared, {
+      const [strictOcr, softOcr] = await Promise.all([
+        recognizeDetailed(strictPrepared, {
           whitelist:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
           pageSegMode: "7",
         }),
-        recognizeDetailed(yellowSoftPrepared, {
+        recognizeDetailed(softPrepared, {
           whitelist:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
           pageSegMode: "7",
         }),
       ]);
 
-      candidates.push(...extractNameCandidatesFromOCR(yellowStrictOcr, 1.35));
-      candidates.push(...extractNameCandidatesFromOCR(yellowSoftOcr, 1.15));
+      candidates.push(...extractNameCandidatesFromOCR(strictOcr, 1.35));
+      candidates.push(...extractNameCandidatesFromOCR(softOcr, 1.10));
     }
   }
 
@@ -1232,31 +1282,31 @@ async function extractChiefName(
       height: 0.18,
     });
 
-    const fallbackStrictPrepared = upscaleCanvas(
+    const strictPrepared = upscaleCanvas(
       buildYellowTextCanvas(fallbackCrop, "strict"),
       6
     );
 
-    const fallbackSoftPrepared = upscaleCanvas(
+    const softPrepared = upscaleCanvas(
       buildYellowTextCanvas(fallbackCrop, "soft"),
       5
     );
 
-    const [fallbackStrictOcr, fallbackSoftOcr] = await Promise.all([
-      recognizeDetailed(fallbackStrictPrepared, {
+    const [strictOcr, softOcr] = await Promise.all([
+      recognizeDetailed(strictPrepared, {
         whitelist:
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
         pageSegMode: "7",
       }),
-      recognizeDetailed(fallbackSoftPrepared, {
+      recognizeDetailed(softPrepared, {
         whitelist:
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
         pageSegMode: "7",
       }),
     ]);
 
-    candidates.push(...extractNameCandidatesFromOCR(fallbackStrictOcr, 1.2));
-    candidates.push(...extractNameCandidatesFromOCR(fallbackSoftOcr, 1.0));
+    candidates.push(...extractNameCandidatesFromOCR(strictOcr, 1.2));
+    candidates.push(...extractNameCandidatesFromOCR(softOcr, 1.0));
   }
 
   return chooseBestChiefName(candidates);
@@ -1329,13 +1379,23 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
     return "Unknown";
   }
 
-  const aggregated = new Map<string, number>();
+  const aggregated = new Map<
+    string,
+    {
+      totalWeight: number;
+      hits: number;
+    }
+  >();
 
   for (const candidate of normalized) {
-    aggregated.set(
-      candidate.value,
-      (aggregated.get(candidate.value) ?? 0) + candidate.weight
-    );
+    const current = aggregated.get(candidate.value) ?? {
+      totalWeight: 0,
+      hits: 0,
+    };
+
+    current.totalWeight += candidate.weight;
+    current.hits += 1;
+    aggregated.set(candidate.value, current);
   }
 
   const values = [...aggregated.keys()];
@@ -1344,8 +1404,13 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
   let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const value of values) {
+    const entry = aggregated.get(value)!;
     const lower = value.toLowerCase();
-    let score = (aggregated.get(value) ?? 0) * 100 + scoreNameCandidate(value);
+
+    let score =
+      entry.totalWeight * 100 +
+      entry.hits * 14 +
+      scoreNameCandidate(value);
 
     for (const other of values) {
       if (other === value) {
@@ -1356,32 +1421,26 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
       const prefix = commonPrefixLength(lower, otherLower);
       const minLen = Math.min(value.length, other.length);
 
-      if (prefix >= Math.max(4, Math.floor(minLen * 0.65))) {
+      if (prefix >= Math.max(3, Math.floor(minLen * 0.6))) {
         if (value.length < other.length) {
-          score -= 16 + (other.length - value.length) * 2.5;
+          score -= 14 + (other.length - value.length) * 2.2;
         } else {
-          score += 12;
+          score += 10;
         }
       }
 
       if (
-        otherLower.endsWith(lower) &&
-        other.length >= value.length + 2
+        other.length >= value.length + 2 &&
+        (otherLower.startsWith(lower) || otherLower.endsWith(lower))
       ) {
-        score -= 28;
+        score -= 24;
       }
 
       if (
-        lower.endsWith(otherLower) &&
-        value.length >= other.length + 2
+        value.length >= other.length + 2 &&
+        (lower.startsWith(otherLower) || lower.endsWith(otherLower))
       ) {
-        score += 18;
-      }
-
-      if (/^phvt/i.test(value) && value.length >= other.length + 2) {
-        if (lower.endsWith(otherLower) || otherLower.endsWith(lower)) {
-          score += 22;
-        }
+        score += 16;
       }
     }
 
@@ -1424,98 +1483,479 @@ async function extractMightPair(
   };
 }
 
+async function extractMightPairDebug(
+  rootCanvas: HTMLCanvasElement,
+  infoRect: PixelRect
+): Promise<MightPairDebug> {
+  const { individualRect } = findMightLineRects(rootCanvas, infoRect);
+
+  if (!individualRect) {
+    return {
+      individualMight: 0,
+      heroMight: 0,
+      candidateLines: ["No individual might line detected"],
+    };
+  }
+
+  const result = await readBestNumberFromRowDebug(
+    cropPixelRect(rootCanvas, individualRect)
+  );
+
+  return {
+    individualMight: result.value,
+    heroMight: 0,
+    candidateLines: result.candidateLines,
+  };
+}
+
+function normalizeNumericToken(value: string) {
+  return value
+    .replace(/[OoQ]/g, "0")
+    .replace(/[Il|!]/g, "1")
+    .replace(/[Ss]/g, "5")
+    .replace(/[Bb]/g, "8")
+    .replace(/[Zz]/g, "2")
+    .replace(/[^\d]/g, "");
+}
+
 async function readBestNumberFromRow(
   crop: HTMLCanvasElement
 ): Promise<number> {
-  const variants: HTMLCanvasElement[] = [
-    crop,
-    cropNormalized(crop, { x: 0.08, y: 0, width: 0.92, height: 1 }),
-    cropNormalized(crop, { x: 0.14, y: 0, width: 0.86, height: 1 }),
-    cropNormalized(crop, { x: 0.20, y: 0, width: 0.80, height: 1 }),
-    buildWhiteTextCanvas(crop),
-    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.08, y: 0, width: 0.92, height: 1 })),
-    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.14, y: 0, width: 0.86, height: 1 })),
-    buildWhiteTextCanvas(cropNormalized(crop, { x: 0.20, y: 0, width: 0.80, height: 1 })),
-  ];
-
-  const candidates: string[] = [];
-
-  for (const variant of variants) {
-    const prepared = upscaleCanvas(variant, 4);
-
-    const ocr = await recognizeDetailed(prepared, {
-      whitelist: "0123456789,.",
-      pageSegMode: "7",
-    });
-
-    candidates.push(...extractNumericCandidatesFromOCR(ocr));
-  }
-
+  const candidates = await collectNumericCandidatesFromRow(crop);
   return chooseBestNumericCandidate(candidates);
 }
 
-function extractNumericCandidatesFromOCR(ocr: OCRResultLite): string[] {
-  const values = new Set<string>();
-
-  const rawMatches = ocr.text.match(/\d[\d,.\s]{2,}/g) ?? [];
-  for (const match of rawMatches) {
-    const digits = match.replace(/[^\d]/g, "");
-    if (digits.length >= 8 && digits.length <= 10) {
-      values.add(digits);
-    }
-  }
-
-  for (const word of ocr.words) {
-    const digits = (word.text ?? "").replace(/[^\d]/g, "");
-    if (digits.length >= 8 && digits.length <= 10) {
-      values.add(digits);
-    }
-  }
-
-  return [...values];
+async function readBestNumberFromRowDebug(
+  crop: HTMLCanvasElement
+): Promise<NumericReadDebug> {
+  const candidates = await collectNumericCandidatesFromRow(crop);
+  return chooseBestNumericCandidateDetailed(candidates);
 }
 
-function chooseBestNumericCandidate(candidates: string[]): number {
+async function collectNumericCandidatesFromRow(
+  crop: HTMLCanvasElement
+): Promise<NumericCandidate[]> {
+  const variants: Array<{
+    canvas: HTMLCanvasElement;
+    masked: boolean;
+    trimLeft: number;
+  }> = [
+    {
+      canvas: cropNormalized(crop, { x: 0.00, y: 0.02, width: 1.00, height: 0.96 }),
+      masked: false,
+      trimLeft: 0.00,
+    },
+    {
+      canvas: cropNormalized(crop, { x: 0.08, y: 0.02, width: 0.92, height: 0.96 }),
+      masked: false,
+      trimLeft: 0.08,
+    },
+    {
+      canvas: cropNormalized(crop, { x: 0.16, y: 0.02, width: 0.84, height: 0.96 }),
+      masked: false,
+      trimLeft: 0.16,
+    },
+    {
+      canvas: cropNormalized(crop, { x: 0.24, y: 0.02, width: 0.76, height: 0.96 }),
+      masked: false,
+      trimLeft: 0.24,
+    },
+    {
+      canvas: buildWhiteTextCanvas(
+        cropNormalized(crop, { x: 0.00, y: 0.02, width: 1.00, height: 0.96 })
+      ),
+      masked: true,
+      trimLeft: 0.00,
+    },
+    {
+      canvas: buildWhiteTextCanvas(
+        cropNormalized(crop, { x: 0.08, y: 0.02, width: 0.92, height: 0.96 })
+      ),
+      masked: true,
+      trimLeft: 0.08,
+    },
+    {
+      canvas: buildWhiteTextCanvas(
+        cropNormalized(crop, { x: 0.16, y: 0.02, width: 0.84, height: 0.96 })
+      ),
+      masked: true,
+      trimLeft: 0.16,
+    },
+    {
+      canvas: buildWhiteTextCanvas(
+        cropNormalized(crop, { x: 0.24, y: 0.02, width: 0.76, height: 0.96 })
+      ),
+      masked: true,
+      trimLeft: 0.24,
+    },
+  ];
+
+  const candidates: NumericCandidate[] = [];
+
+  for (const variant of variants) {
+    for (const pageSegMode of ["7", "6"] as const) {
+      const prepared = upscaleCanvas(variant.canvas, variant.masked ? 5 : 4);
+
+      const ocr = await recognizeDetailed(prepared, {
+        whitelist: "0123456789OoQIl|!SsBbZz,.",
+        pageSegMode,
+      });
+
+      const sourceWeight =
+        (variant.masked ? 1.15 : 1.0) * (pageSegMode === "7" ? 1.05 : 0.95);
+
+      candidates.push(
+        ...extractNumericCandidatesFromOCR(ocr, sourceWeight, {
+          masked: variant.masked,
+          trimLeft: variant.trimLeft,
+          pageSegMode,
+        })
+      );
+    }
+  }
+
+  return candidates;
+}
+
+function extractNumericCandidatesFromOCR(
+  ocr: OCRResultLite,
+  sourceWeight: number,
+  meta: {
+    masked: boolean;
+    trimLeft: number;
+    pageSegMode: "6" | "7";
+  }
+): NumericCandidate[] {
+  const results: NumericCandidate[] = [];
+
+  function pushCandidate(rawValue: string, extraWeight = 1) {
+    const digits = normalizeNumericToken(rawValue);
+
+    if (digits.length < 7 || digits.length > 10) {
+      return;
+    }
+
+    results.push({
+      value: digits,
+      weight: sourceWeight * extraWeight,
+      masked: meta.masked,
+      trimLeft: meta.trimLeft,
+      pageSegMode: meta.pageSegMode,
+    });
+  }
+
+  const rawMatches =
+    (ocr.text ?? "").match(/[0-9OoQIl|!SsBbZz][0-9OoQIl|!SsBbZz,.\s]{4,}/g) ?? [];
+
+  for (const match of rawMatches) {
+    pushCandidate(match, 0.9);
+  }
+
+  const wordTokens = ocr.words
+    .map((word) => ({
+      value: normalizeNumericToken(word.text ?? ""),
+      confidence: Number.isFinite(word.confidence) ? word.confidence : 0,
+    }))
+    .filter((entry) => entry.value.length > 0);
+
+  for (const token of wordTokens) {
+    pushCandidate(token.value, Math.max(0.45, token.confidence / 100));
+  }
+
+  for (let start = 0; start < wordTokens.length; start += 1) {
+    let combined = "";
+    let minConfidence = 100;
+
+    for (
+      let end = start;
+      end < Math.min(wordTokens.length, start + 4);
+      end += 1
+    ) {
+      combined += wordTokens[end].value;
+      minConfidence = Math.min(minConfidence, wordTokens[end].confidence);
+
+      if (combined.length >= 7 && combined.length <= 10) {
+        pushCandidate(combined, Math.max(0.5, minConfidence / 100) * 1.08);
+      }
+    }
+  }
+
+  return results;
+}
+
+function chooseBestNumericCandidate(candidates: NumericCandidate[]): number {
   const filtered = candidates
-    .filter((value) => /^\d+$/.test(value))
-    .filter((value) => value.length >= 8 && value.length <= 10)
-    .map((value) => value.replace(/^0+/, "") || "0")
-    .filter((value) => {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) && numeric >= 10000 && numeric <= 500000000;
+    .map((candidate) => ({
+      ...candidate,
+      value: candidate.value.replace(/^0+/, "") || "0",
+    }))
+    .filter((candidate) => /^\d+$/.test(candidate.value))
+    .filter((candidate) => candidate.value.length >= 8 && candidate.value.length <= 10)
+    .filter((candidate) => {
+      const numeric = Number(candidate.value);
+      return Number.isFinite(numeric) && numeric >= 1000000 && numeric <= 500000000;
     });
 
   if (!filtered.length) {
     return 0;
   }
 
-  const unique = [...new Set(filtered)];
+  const grouped = new Map<
+    string,
+    {
+      totalWeight: number;
+      hits: number;
+      maskedHits: number;
+      trimTotal: number;
+    }
+  >();
 
-  let best = unique[0];
+  for (const candidate of filtered) {
+    const current = grouped.get(candidate.value) ?? {
+      totalWeight: 0,
+      hits: 0,
+      maskedHits: 0,
+      trimTotal: 0,
+    };
+
+    current.totalWeight += candidate.weight;
+    current.hits += 1;
+    current.maskedHits += candidate.masked ? 1 : 0;
+    current.trimTotal += candidate.trimLeft;
+
+    grouped.set(candidate.value, current);
+  }
+
+  const values = [...grouped.keys()];
+
+  let best = values[0];
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (const candidate of unique) {
-    let score = 0;
+  for (const value of values) {
+    const entry = grouped.get(value)!;
+    const averageTrim = entry.trimTotal / entry.hits;
+    const numeric = Number(value);
 
-    for (const other of filtered) {
-      if (candidate === other) {
-        score += 100;
-      } else {
-        score += numericStringSimilarity(candidate, other) * 20;
-      }
+    let score =
+      entry.totalWeight * 120 +
+      entry.hits * 24 +
+      entry.maskedHits * 8 +
+      Math.min(14, Math.log10(Math.max(numeric, 1)) * 2);
+
+    if (value.length === 9) score += 18;
+    else if (value.length === 8) score += 12;
+    else if (value.length === 10) score += 4;
+    else score -= 24;
+
+    if (averageTrim >= 0.08 && averageTrim <= 0.30) {
+      score += 8;
     }
 
-    if (candidate.length === 9) {
-      score += 10;
+    for (const other of filtered) {
+      if (other.value === value) {
+        continue;
+      }
+
+      score += numericStringSimilarity(value, other.value) * 8 * other.weight;
+
+      if (
+        value.length === other.value.length + 1 &&
+        (value.startsWith(other.value) || value.endsWith(other.value))
+      ) {
+        score += 22 * other.weight;
+      }
+
+      if (
+        other.value.length === value.length + 1 &&
+        (other.value.startsWith(value) || other.value.endsWith(value))
+      ) {
+        score -= 18 * other.weight;
+      }
+
+      if (
+        value.length === other.value.length + 2 &&
+        (value.startsWith(other.value) || value.endsWith(other.value))
+      ) {
+        score += 10 * other.weight;
+      }
+
+      if (
+        other.value.length === value.length + 2 &&
+        (other.value.startsWith(value) || other.value.endsWith(value))
+      ) {
+        score -= 8 * other.weight;
+      }
     }
 
     if (score > bestScore) {
       bestScore = score;
-      best = candidate;
+      best = value;
     }
   }
 
   return Number(best);
+}
+
+function chooseBestNumericCandidateDetailed(
+  candidates: NumericCandidate[]
+): NumericReadDebug {
+  const groups = scoreNumericCandidateGroups(candidates);
+
+  if (!groups.length) {
+    return {
+      value: 0,
+      candidateLines: ["No valid numeric candidates"],
+    };
+  }
+
+  return {
+    value: Number(groups[0].value),
+    candidateLines: groups.slice(0, 8).map((group, index) => {
+      const sourceList = group.sources.slice(0, 6).join(", ");
+
+      return [
+        `#${index + 1}`,
+        group.value,
+        `score=${group.score.toFixed(1)}`,
+        `hits=${group.hits}`,
+        `w=${group.totalWeight.toFixed(2)}`,
+        `masked=${group.maskedHits}`,
+        `trim=${(group.trimTotal / Math.max(group.hits, 1)).toFixed(2)}`,
+        `psm7=${group.psm7Hits}`,
+        `psm6=${group.psm6Hits}`,
+        sourceList ? `src=${sourceList}` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+    }),
+  };
+}
+
+function scoreNumericCandidateGroups(
+  candidates: NumericCandidate[]
+): NumericCandidateGroup[] {
+  const filtered = candidates
+    .map((candidate) => ({
+      ...candidate,
+      value: candidate.value.replace(/^0+/, "") || "0",
+    }))
+    .filter((candidate) => /^\d+$/.test(candidate.value))
+    .filter((candidate) => candidate.value.length >= 8 && candidate.value.length <= 10)
+    .filter((candidate) => {
+      const numeric = Number(candidate.value);
+      return Number.isFinite(numeric) && numeric >= 1000000 && numeric <= 500000000;
+    });
+
+  if (!filtered.length) {
+    return [];
+  }
+
+  const grouped = new Map<
+    string,
+    Omit<NumericCandidateGroup, "score">
+  >();
+
+  for (const candidate of filtered) {
+    const current = grouped.get(candidate.value) ?? {
+      value: candidate.value,
+      totalWeight: 0,
+      hits: 0,
+      maskedHits: 0,
+      trimTotal: 0,
+      psm6Hits: 0,
+      psm7Hits: 0,
+      sources: [],
+    };
+
+    current.totalWeight += candidate.weight;
+    current.hits += 1;
+    current.maskedHits += candidate.masked ? 1 : 0;
+    current.trimTotal += candidate.trimLeft;
+    current.psm6Hits += candidate.pageSegMode === "6" ? 1 : 0;
+    current.psm7Hits += candidate.pageSegMode === "7" ? 1 : 0;
+
+    const sourceTag = `${candidate.masked ? "M" : "R"}@${candidate.trimLeft.toFixed(2)}/psm${candidate.pageSegMode}`;
+    if (!current.sources.includes(sourceTag)) {
+      current.sources.push(sourceTag);
+    }
+
+    grouped.set(candidate.value, current);
+  }
+
+  const values = [...grouped.keys()];
+  const scored: NumericCandidateGroup[] = [];
+
+  for (const value of values) {
+    const entry = grouped.get(value)!;
+    const averageTrim = entry.trimTotal / entry.hits;
+    const numeric = Number(value);
+
+    let score =
+      entry.totalWeight * 120 +
+      entry.hits * 24 +
+      entry.maskedHits * 8 +
+      Math.min(14, Math.log10(Math.max(numeric, 1)) * 2);
+
+    if (value.length === 9) score += 18;
+    else if (value.length === 8) score += 12;
+    else if (value.length === 10) score += 4;
+    else score -= 24;
+
+    if (averageTrim >= 0.08 && averageTrim <= 0.30) {
+      score += 8;
+    }
+
+    for (const other of filtered) {
+      if (other.value === value) {
+        continue;
+      }
+
+      score += numericStringSimilarity(value, other.value) * 8 * other.weight;
+
+      if (
+        value.length === other.value.length + 1 &&
+        (value.startsWith(other.value) || value.endsWith(other.value))
+      ) {
+        score += 22 * other.weight;
+      }
+
+      if (
+        other.value.length === value.length + 1 &&
+        (other.value.startsWith(value) || other.value.endsWith(value))
+      ) {
+        score -= 18 * other.weight;
+      }
+
+      if (
+        value.length === other.value.length + 2 &&
+        (value.startsWith(other.value) || value.endsWith(other.value))
+      ) {
+        score += 10 * other.weight;
+      }
+
+      if (
+        other.value.length === value.length + 2 &&
+        (other.value.startsWith(value) || other.value.endsWith(value))
+      ) {
+        score -= 8 * other.weight;
+      }
+    }
+
+    scored.push({
+      ...entry,
+      score,
+    });
+  }
+
+  scored.sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+
+    return Number(right.value) - Number(left.value);
+  });
+
+  return scored;
 }
 
 function numericStringSimilarity(left: string, right: string) {
@@ -2476,6 +2916,7 @@ function getConfidenceLabel(
 
 function cleanLeadingNoise(name: string) {
   let cleaned = name
+    .replace(/[★☆•·]/g, " ")
     .replace(/^\[+/, "")
     .replace(/\]+$/, "")
     .replace(/^[^A-Za-z0-9]+/, "")
@@ -2513,17 +2954,20 @@ function scoreNameCandidate(name: string) {
 
   let score = letters * 5 + digits * 1.5 + length;
 
-  if (length < 4) score -= 35;
+  if (length < 4) score -= 24;
   if (length > 16) score -= 12 + (length - 16) * 3;
-  if (digits > 3) score -= 20;
-  if (letters < 4) score -= 25;
+  if (digits > 4) score -= 18;
+  if (letters < 3) score -= 28;
   if (uppers >= 1 && lowers >= 1) score += 8;
-
-  if (/[A-Z]{3,}/.test(name.slice(4))) score -= 12;
-  if (/[a-z]{4,}[A-Z]{2,}$/.test(name)) score -= 22;
+  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(name)) score += 10;
   if (/(.)\1\1/i.test(name)) score -= 18;
+  if (/[_-]{2,}/.test(name)) score -= 18;
 
-  if (/artifact|artefact|artefatto|artefato|chief|capo|kingdom|regno|reino|info|vai|go/i.test(name)) {
+  if (
+    /phoenixveritas|artifact|artefact|artefatto|artefato|chief|capo|kingdom|regno|reino|info|vai|go/i.test(
+      name
+    )
+  ) {
     score -= 90;
   }
 
@@ -3402,31 +3846,32 @@ function buildDebugCrops(
   layout: LayoutModel,
   chiefName: string,
   individualMight: number,
-  slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>
+  slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>,
+  individualMightDebugLines: string[] = []
 ): DebugCropResult[] {
   const results: DebugCropResult[] = [];
 
-const detectedNameRect = layout.nameRect;
+  const detectedNameRect = layout.nameRect;
 
-const nameCrop = detectedNameRect
-  ? cropPixelRect(rootCanvas, detectedNameRect)
-  : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
-      x: 0.16,
-      y: 0.05,
-      width: 0.64,
-      height: 0.16,
-    });
+  const nameCrop = detectedNameRect
+    ? cropPixelRect(rootCanvas, detectedNameRect)
+    : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
+        x: 0.16,
+        y: 0.05,
+        width: 0.64,
+        height: 0.16,
+      });
 
-const { individualRect } = findMightLineRects(rootCanvas, layout.topInfoRect);
+  const { individualRect } = findMightLineRects(rootCanvas, layout.topInfoRect);
 
-const individualCrop = individualRect
-  ? cropPixelRect(rootCanvas, individualRect)
-  : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
-      x: 0.28,
-      y: 0.32,
-      width: 0.56,
-      height: 0.12,
-    });
+  const individualCrop = individualRect
+    ? cropPixelRect(rootCanvas, individualRect)
+    : cropRelativeToRect(rootCanvas, layout.topInfoRect, {
+        x: 0.28,
+        y: 0.32,
+        width: 0.56,
+        height: 0.12,
+      });
 
   results.push({
     id: "name",
@@ -3439,7 +3884,10 @@ const individualCrop = individualRect
     id: "individual-might",
     label: "Individual Might region",
     imageUrl: canvasToDataUrl(individualCrop),
-    meta: `Detected: ${formatNumber(individualMight)}`,
+    meta: [
+      `Detected: ${formatNumber(individualMight)}`,
+      ...individualMightDebugLines,
+    ].join("\n"),
   });
 
   results.push({

@@ -412,44 +412,75 @@ async function copyEnemyAnalysisReport(
 function buildEnemyAnalysisTextReport(
   rows: EnemyAnalysisRow[],
   sortField: SortField,
-  folderLabel: string,
-  t: ReturnType<typeof getTranslation>
+  _folderLabel: string,
+  _t: ReturnType<typeof getTranslation>
 ) {
-  const grouped = groupRowsByArmy(rows, sortField);
+  const validRows = rows.filter((row) => getSortValue(row, sortField) > 0);
 
-  const sortLabel =
-    sortField === "individualMight"
-      ? t.enemyAnalysis.individualMight
-      : t.enemyAnalysis.heroMight;
+  const sortedOverall = [...validRows].sort(
+    (left, right) => getSortValue(right, sortField) - getSortValue(left, sortField)
+  );
 
-  const sections: string[] = [];
+  const priorityTargets = sortedOverall.slice(0, 5);
+  const grouped = groupRowsByArmy(validRows, sortField);
 
-  sections.push("ENEMY TRIBE ANALYSIS");
-  sections.push(`${t.enemyAnalysis.selectedFolder}: ${folderLabel}`);
-  sections.push(`${t.enemyAnalysis.orderBy}: ${sortLabel}`);
-  sections.push("");
+  const archerRows =
+    grouped.find((group) => group.armyType === "archer")?.rows ?? [];
+  const berserkerRows =
+    grouped.find((group) => group.armyType === "berserker")?.rows ?? [];
+  const cavalryRows =
+    grouped.find((group) => group.armyType === "cavalry")?.rows ?? [];
 
-  for (const group of grouped) {
-    const label = getArmyLabel(group.armyType, t);
-
-    sections.push(label);
-
-    if (!group.rows.length) {
-      sections.push(`- ${t.enemyAnalysis.noChiefsClassified} ${label}.`);
-      sections.push("");
-      continue;
-    }
-
-    for (const row of group.rows) {
-      sections.push(
-        `- ${row.chiefName} | IM: ${formatNumber(row.individualMight)} | Build: ${getPrimarySlotSummary(row)} | ${t.enemyAnalysis.confidence}: ${getConfidenceLabel(row.confidence, t)}`
-      );
-    }
-
-    sections.push("");
+  function formatMillions(value: number) {
+    return `${(value / 1_000_000).toFixed(2)}M`;
   }
 
-  return sections.join("\n").trim();
+  function formatArmyInline(armyType: ArmyType) {
+    switch (armyType) {
+      case "archer":
+        return "Archer";
+      case "berserker":
+        return "Berserker";
+      case "cavalry":
+        return "Cavalry";
+    }
+  }
+
+  function renderPriorityLine(row: EnemyAnalysisRow) {
+    return `${row.chiefName} – ${formatMillions(getSortValue(row, sortField))} → ${formatArmyInline(row.armyType)}`;
+  }
+
+  function renderArmyLine(row: EnemyAnalysisRow) {
+    return `${row.chiefName} – ${formatMillions(getSortValue(row, sortField))}`;
+  }
+
+  return [
+    "Priority Targets (Must Take Down as a Tribe)",
+    ...priorityTargets.map(renderPriorityLine),
+    "",
+    "Archer Targets",
+    ...(archerRows.length
+      ? archerRows.map(renderArmyLine)
+      : ["No archer targets found."]),
+    "",
+    "Berserker Targets",
+    ...(berserkerRows.length
+      ? berserkerRows.map(renderArmyLine)
+      : ["No berserker targets found."]),
+    "",
+    "Cavalry Targets",
+    ...(cavalryRows.length
+      ? cavalryRows.map(renderArmyLine)
+      : ["No cavalry targets found."]),
+    "",
+    "Strategy Reminder",
+    "Swarm Attack is Key: Always move together as a group.",
+    "Coordinate on Priority Targets: Focus fire on the main targets first to break enemy lines.",
+  ].join("\n");
+}
+
+function getSortValue(row: EnemyAnalysisRow, sortField: SortField) {
+  return sortField === "heroMight" ? row.heroMight : row.individualMight;
 }
 
 function fallbackCopyText(text: string) {
