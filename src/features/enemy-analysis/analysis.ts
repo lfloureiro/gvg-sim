@@ -1156,17 +1156,24 @@ function findMightLineRects(
   const secondBand = orderedStrongBands[1] ?? orderedAllBands[1];
 
   function bandToRect(
-    band: { start: number; end: number } | undefined
+    band: { start: number; end: number } | undefined,
+    nextBand?: { start: number; end: number }
   ): PixelRect | null {
     if (!band) {
       return null;
     }
 
+    const cappedEnd = nextBand
+      ? Math.min(band.end, nextBand.start - 4)
+      : band.end;
+
+    if (cappedEnd < band.start) {
+      return null;
+    }
+
     const localY = Math.max(band.start - 2, 0);
-    const localHeight = Math.max(
-      Math.min(band.end - band.start + 5, searchRect.height - localY),
-      1
-    );
+    const localEnd = Math.min(cappedEnd + 2, searchRect.height - 1);
+    const localHeight = Math.max(localEnd - localY + 1, 1);
 
     const leftPad = Math.floor(searchRect.width * 0.16);
     const rightPad = Math.floor(searchRect.width * 0.03);
@@ -1180,7 +1187,7 @@ function findMightLineRects(
   }
 
   return {
-    individualRect: bandToRect(firstBand),
+    individualRect: bandToRect(firstBand, secondBand),
     heroRect: bandToRect(secondBand),
   };
 }
@@ -1518,18 +1525,72 @@ function normalizeNumericToken(value: string) {
     .replace(/[^\d]/g, "");
 }
 
+const NUMBER_READ_STAGES = [
+  { label: "top-58%", height: 0.58 },
+  { label: "top-72%", height: 0.72 },
+  { label: "top-86%", height: 0.86 },
+  { label: "full", height: 1.0 },
+] as const;
+
+function cropTopPortion(
+  crop: HTMLCanvasElement,
+  height: number
+): HTMLCanvasElement {
+  if (height >= 0.999) {
+    return crop;
+  }
+
+  return cropNormalized(crop, {
+    x: 0,
+    y: 0,
+    width: 1,
+    height,
+  });
+}
+
 async function readBestNumberFromRow(
   crop: HTMLCanvasElement
 ): Promise<number> {
-  const candidates = await collectNumericCandidatesFromRow(crop);
-  return chooseBestNumericCandidate(candidates);
+  for (const stage of NUMBER_READ_STAGES) {
+    const stageCrop = cropTopPortion(crop, stage.height);
+    const candidates = await collectNumericCandidatesFromRow(stageCrop);
+    const value = chooseBestNumericCandidate(candidates);
+
+    if (value > 0) {
+      return value;
+    }
+  }
+
+  return 0;
 }
 
 async function readBestNumberFromRowDebug(
   crop: HTMLCanvasElement
 ): Promise<NumericReadDebug> {
-  const candidates = await collectNumericCandidatesFromRow(crop);
-  return chooseBestNumericCandidateDetailed(candidates);
+  const debugLines: string[] = [];
+
+  for (const stage of NUMBER_READ_STAGES) {
+    const stageCrop = cropTopPortion(crop, stage.height);
+    const candidates = await collectNumericCandidatesFromRow(stageCrop);
+    const result = chooseBestNumericCandidateDetailed(candidates);
+
+    debugLines.push(`[${stage.label}] picked=${result.value || 0}`);
+    debugLines.push(...result.candidateLines.map((line) => `  ${line}`));
+
+    if (result.value > 0) {
+      return {
+        value: result.value,
+        candidateLines: debugLines,
+      };
+    }
+  }
+
+  return {
+    value: 0,
+    candidateLines: debugLines.length
+      ? debugLines
+      : ["No valid numeric candidates"],
+  };
 }
 
 async function collectNumericCandidatesFromRow(
