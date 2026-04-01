@@ -32,8 +32,12 @@ type BrowserWindowWithDirectoryPicker = Window & {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
 };
 
-const DISCORD_WEBHOOK_URL =
-  "https://discord.com/api/webhooks/1486791065095901195/NAOqjAO5sSwWo5nKu8xuHegyb3eXfIt4pC4zXPX_fhD1xkj9TqnIZLKxR1sUYPaTSTK9";
+const DISCORD_WEBHOOKS = {
+  tribalShowdown: "https://discord.com/api/webhooks/1486791065095901195/NAOqjAO5sSwWo5nKu8xuHegyb3eXfIt4pC4zXPX_fhD1xkj9TqnIZLKxR1sUYPaTSTK9",
+  jotunheim: "https://discord.com/api/webhooks/1488907707657486451/CdZDFyKYhNpMDn8Ci-WlkLP5KZzuOJeyT80BLFGxT4_5dXbDGiD_wzuWOf7qQuUSfEjF",
+} as const;
+
+type DiscordDestino = keyof typeof DISCORD_WEBHOOKS;
 
 export default function EnemyTribeAnalysisScreen({
   onBack,
@@ -172,11 +176,27 @@ export default function EnemyTribeAnalysisScreen({
                   rows,
                   sortField,
                   selectedFolderLabel || "enemy-analysis",
-                  t
+                  t,
+                  "tribalShowdown"
                 )
               }
             >
-              Send to Discord
+              Send to Tribal Showdown
+            </button>
+
+            <button
+              className="primary-button"
+              onClick={() =>
+                sendEnemyAnalysisReportToDiscord(
+                  rows,
+                  sortField,
+                  selectedFolderLabel || "enemy-analysis",
+                  t,
+                  "jotunheim"
+                )
+              }
+            >
+              Send to Jotunheim
             </button>
           </>
         ) : null}
@@ -432,14 +452,16 @@ async function sendEnemyAnalysisReportToDiscord(
   rows: EnemyAnalysisRow[],
   sortField: SortField,
   folderLabel: string,
-  t: ReturnType<typeof getTranslation>
+  t: ReturnType<typeof getTranslation>,
+  destino: DiscordDestino
 ) {
   const report = buildEnemyAnalysisTextReport(rows, sortField, folderLabel, t);
   const chunks = splitDiscordMessage(report, 1900);
+  const webhookUrl = DISCORD_WEBHOOKS[destino];
 
   try {
     for (const chunk of chunks) {
-      const response = await fetch(`${DISCORD_WEBHOOK_URL}?wait=true`, {
+      const response = await fetch(`${webhookUrl}?wait=true`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -455,9 +477,17 @@ async function sendEnemyAnalysisReportToDiscord(
       }
     }
 
-    alert("Report sent to Discord.");
+    alert(
+      destino === "jotunheim"
+        ? "Report sent to Jotunheim."
+        : "Report sent to Tribal Showdown."
+    );
   } catch {
-    alert("Could not send the report to Discord.");
+    alert(
+      destino === "jotunheim"
+        ? "Could not send the report to Jotunheim."
+        : "Could not send the report to Tribal Showdown."
+    );
   }
 }
 
