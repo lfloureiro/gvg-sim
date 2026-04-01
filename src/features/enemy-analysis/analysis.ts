@@ -427,7 +427,9 @@ export async function analyzeEnemyImages(
         step: "Detecting layout",
       });
 
-      const layout = await detectLayout(analysisCanvas);
+      const layout = await detectLayout(analysisCanvas, {
+        allowNameOcrFallback: false,
+      });
 
       onProgress?.({
         current: index + 1,
@@ -439,7 +441,8 @@ export async function analyzeEnemyImages(
       const chiefName = await extractChiefName(
         analysisCanvas,
         layout.topInfoRect,
-        layout.nameRect
+        layout.nameRect,
+        true
       );
 
       onProgress?.({
@@ -451,7 +454,8 @@ export async function analyzeEnemyImages(
 
       const { individualMight, heroMight } = await extractMightPair(
         analysisCanvas,
-        layout.topInfoRect
+        layout.topInfoRect,
+        "fast"
       );
 
       onProgress?.({
@@ -603,11 +607,16 @@ function compareRows(
 
 async function detectChiefNameRect(
   rootCanvas: HTMLCanvasElement,
-  infoRect: PixelRect
+  infoRect: PixelRect,
+  allowOcrFallback = true
 ): Promise<PixelRect | null> {
   const yellowRect = findYellowNameRect(rootCanvas);
   if (yellowRect) {
     return yellowRect;
+  }
+
+  if (!allowOcrFallback) {
+    return null;
   }
 
   return await findNameRectByOCRFallback(rootCanvas, infoRect);
@@ -706,10 +715,19 @@ function isLikelyChiefNameToken(value: string) {
   return true;
 }
 
-async function detectLayout(rootCanvas: HTMLCanvasElement): Promise<LayoutModel> {
+async function detectLayout(
+  rootCanvas: HTMLCanvasElement,
+  options?: {
+    allowNameOcrFallback?: boolean;
+  }
+): Promise<LayoutModel> {
   const artifactTitleRect = await findArtifactTitleRect(rootCanvas);
   let topInfoRect = buildTopInfoRect(rootCanvas, artifactTitleRect);
-  const nameRect = await detectChiefNameRect(rootCanvas, topInfoRect);
+  const nameRect = await detectChiefNameRect(
+    rootCanvas,
+    topInfoRect,
+    options?.allowNameOcrFallback ?? true
+  );
 
   if (nameRect) {
     topInfoRect = buildTopInfoRectFromName(rootCanvas, nameRect);
@@ -1231,9 +1249,15 @@ function buildTopInfoRectFromName(
 async function extractChiefName(
   rootCanvas: HTMLCanvasElement,
   infoRect: PixelRect,
-  providedNameRect?: PixelRect | null
+  providedNameRect?: PixelRect | null,
+  fast = false
 ) {
-  const nameRect = providedNameRect ?? (await detectChiefNameRect(rootCanvas, infoRect));
+  const nameRect =
+    providedNameRect ??
+    (fast
+      ? findYellowNameRect(rootCanvas)
+      : await detectChiefNameRect(rootCanvas, infoRect));
+
   const candidates: NameCandidate[] = [];
 
   if (nameRect) {
@@ -1252,7 +1276,9 @@ async function extractChiefName(
       expandPixelRect(rootCanvas, nameRect, 10, 14, 18)
     );
 
-    for (const crop of [exactCrop, paddedCrop, tallCrop]) {
+    const crops = fast ? [exactCrop] : [exactCrop, paddedCrop, tallCrop];
+
+    for (const crop of crops) {
       const strictPrepared = upscaleCanvas(
         buildYellowTextCanvas(crop, "strict"),
         6
@@ -1281,7 +1307,7 @@ async function extractChiefName(
     }
   }
 
-  if (!candidates.length) {
+  if (!candidates.length && !fast) {
     const fallbackCrop = cropRelativeToRect(rootCanvas, infoRect, {
       x: 0.16,
       y: 0.05,
@@ -1476,12 +1502,13 @@ function commonPrefixLength(left: string, right: string) {
 
 async function extractMightPair(
   rootCanvas: HTMLCanvasElement,
-  infoRect: PixelRect
+  infoRect: PixelRect,
+  mode: NumberReadMode = "full"
 ): Promise<{ individualMight: number; heroMight: number }> {
   const { individualRect } = findMightLineRects(rootCanvas, infoRect);
 
   const individualMight = individualRect
-    ? await readBestNumberFromRow(cropPixelRect(rootCanvas, individualRect))
+    ? await readBestNumberFromRow(cropPixelRect(rootCanvas, individualRect), mode)
     : 0;
 
   return {
@@ -1531,6 +1558,18 @@ const NUMBER_READ_STAGES = [
   { label: "top-86%", height: 0.86 },
   { label: "full", height: 1.0 },
 ] as const;
+
+type NumberReadMode = "fast" | "full";
+
+const FAST_NUMBER_READ_STAGES = [
+  { label: "top-72%", height: 0.72 },
+  { label: "top-86%", height: 0.86 },
+  { label: "full", height: 1.0 },
+] as const;
+
+function getNumberReadStages(mode: NumberReadMode) {
+  return mode === "fast" ? FAST_NUMBER_READ_STAGES : NUMBER_READ_STAGES;
+}
 
 function cropTopPortion(
   crop: HTMLCanvasElement,
@@ -1669,13 +1708,14 @@ function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null
 
 async function evaluateNumberStage(
   crop: HTMLCanvasElement,
-  stage: { label: string; height: number }
+  stage: { label: string; height: number },
+  mode: NumberReadMode = "full"
 ): Promise<{
   pick: NumericStagePick | null;
   candidateLines: string[];
 }> {
   const stageCrop = cropTopPortion(crop, stage.height);
-  const candidates = await collectNumericCandidatesFromRow(stageCrop);
+  const candidates = await collectNumericCandidatesFromRow(stageCrop, mode);
   const groups = scoreNumericCandidateGroups(candidates);
 
   if (!groups.length) {
@@ -1702,12 +1742,13 @@ async function evaluateNumberStage(
 }
 
 async function readBestNumberFromRow(
-  crop: HTMLCanvasElement
+  crop: HTMLCanvasElement,
+  mode: NumberReadMode = "full"
 ): Promise<number> {
   const picks: NumericStagePick[] = [];
 
-  for (const stage of NUMBER_READ_STAGES) {
-    const result = await evaluateNumberStage(crop, stage);
+  for (const stage of getNumberReadStages(mode)) {
+    const result = await evaluateNumberStage(crop, stage, mode);
 
     if (result.pick) {
       picks.push(result.pick);
@@ -1725,7 +1766,7 @@ async function readBestNumberFromRowDebug(
   const picks: NumericStagePick[] = [];
 
   for (const stage of NUMBER_READ_STAGES) {
-    const result = await evaluateNumberStage(crop, stage);
+    const result = await evaluateNumberStage(crop, stage, "full");
     debugLines.push(...result.candidateLines);
 
     if (result.pick) {
@@ -1745,76 +1786,240 @@ async function readBestNumberFromRowDebug(
 }
 
 async function collectNumericCandidatesFromRow(
-  crop: HTMLCanvasElement
+  crop: HTMLCanvasElement,
+  mode: NumberReadMode = "full"
 ): Promise<NumericCandidate[]> {
+  if (mode === "fast") {
+    const variants: Array<{
+      canvas: HTMLCanvasElement;
+      masked: boolean;
+      trimLeft: number;
+      focused: boolean;
+    }> = [
+      {
+        canvas: cropNormalized(crop, {
+          x: 0.00,
+          y: 0.02,
+          width: 1.00,
+          height: 0.96,
+        }),
+        masked: false,
+        trimLeft: 0.00,
+        focused: false,
+      },
+      {
+        canvas: cropNormalized(crop, {
+          x: 0.08,
+          y: 0.02,
+          width: 0.92,
+          height: 0.96,
+        }),
+        masked: false,
+        trimLeft: 0.08,
+        focused: false,
+      },
+      {
+        canvas: cropNormalized(crop, {
+          x: 0.16,
+          y: 0.02,
+          width: 0.84,
+          height: 0.96,
+        }),
+        masked: false,
+        trimLeft: 0.16,
+        focused: false,
+      },
+      {
+        canvas: cropNormalized(crop, {
+          x: 0.24,
+          y: 0.02,
+          width: 0.76,
+          height: 0.96,
+        }),
+        masked: false,
+        trimLeft: 0.24,
+        focused: false,
+      },
+      {
+        canvas: buildWhiteTextCanvas(
+          cropNormalized(crop, {
+            x: 0.00,
+            y: 0.02,
+            width: 1.00,
+            height: 0.96,
+          })
+        ),
+        masked: true,
+        trimLeft: 0.00,
+        focused: false,
+      },
+      {
+        canvas: buildWhiteTextCanvas(
+          cropNormalized(crop, {
+            x: 0.08,
+            y: 0.02,
+            width: 0.92,
+            height: 0.96,
+          })
+        ),
+        masked: true,
+        trimLeft: 0.08,
+        focused: false,
+      },
+      {
+        canvas: buildWhiteTextCanvas(
+          cropNormalized(crop, {
+            x: 0.16,
+            y: 0.02,
+            width: 0.84,
+            height: 0.96,
+          })
+        ),
+        masked: true,
+        trimLeft: 0.16,
+        focused: false,
+      },
+      {
+        canvas: buildWhiteTextCanvas(
+          cropNormalized(crop, {
+            x: 0.10,
+            y: 0.08,
+            width: 0.84,
+            height: 0.72,
+          })
+        ),
+        masked: true,
+        trimLeft: 0.10,
+        focused: true,
+      },
+    ];
+
+    const candidates: NumericCandidate[] = [];
+
+    for (const variant of variants) {
+      const prepared = upscaleCanvas(
+        variant.canvas,
+        variant.masked || variant.focused ? 5 : 4
+      );
+
+      const ocr = await recognizeDetailed(prepared, {
+        whitelist: "0123456789OoQIl|!SsBbZz,.",
+        pageSegMode: "7",
+      });
+
+      let sourceWeight = (variant.masked ? 1.15 : 1.0) * 1.05;
+
+      if (variant.focused) {
+        sourceWeight *= 1.08;
+      }
+
+      candidates.push(
+        ...extractNumericCandidatesFromOCR(ocr, sourceWeight, {
+          masked: variant.masked,
+          trimLeft: variant.trimLeft,
+          pageSegMode: "7",
+        })
+      );
+    }
+
+    return candidates;
+  }
+
+  const trimSpecs = [
+    { x: 0.00, width: 1.00 },
+    { x: 0.04, width: 0.96 },
+    { x: 0.08, width: 0.92 },
+    { x: 0.12, width: 0.88 },
+    { x: 0.16, width: 0.84 },
+    { x: 0.20, width: 0.80 },
+    { x: 0.24, width: 0.76 },
+    { x: 0.28, width: 0.72 },
+    { x: 0.32, width: 0.68 },
+  ];
+
   const variants: Array<{
     canvas: HTMLCanvasElement;
     masked: boolean;
     trimLeft: number;
-  }> = [
-    {
-      canvas: cropNormalized(crop, { x: 0.00, y: 0.02, width: 1.00, height: 0.96 }),
+    focused: boolean;
+  }> = [];
+
+  for (const trim of trimSpecs) {
+    const baseCrop = cropNormalized(crop, {
+      x: trim.x,
+      y: 0.02,
+      width: trim.width,
+      height: 0.96,
+    });
+
+    variants.push({
+      canvas: baseCrop,
       masked: false,
-      trimLeft: 0.00,
-    },
-    {
-      canvas: cropNormalized(crop, { x: 0.08, y: 0.02, width: 0.92, height: 0.96 }),
-      masked: false,
-      trimLeft: 0.08,
-    },
-    {
-      canvas: cropNormalized(crop, { x: 0.16, y: 0.02, width: 0.84, height: 0.96 }),
-      masked: false,
-      trimLeft: 0.16,
-    },
-    {
-      canvas: cropNormalized(crop, { x: 0.24, y: 0.02, width: 0.76, height: 0.96 }),
-      masked: false,
-      trimLeft: 0.24,
-    },
-    {
-      canvas: buildWhiteTextCanvas(
-        cropNormalized(crop, { x: 0.00, y: 0.02, width: 1.00, height: 0.96 })
-      ),
+      trimLeft: trim.x,
+      focused: false,
+    });
+
+    variants.push({
+      canvas: buildWhiteTextCanvas(baseCrop),
       masked: true,
-      trimLeft: 0.00,
-    },
-    {
-      canvas: buildWhiteTextCanvas(
-        cropNormalized(crop, { x: 0.08, y: 0.02, width: 0.92, height: 0.96 })
-      ),
-      masked: true,
-      trimLeft: 0.08,
-    },
-    {
-      canvas: buildWhiteTextCanvas(
-        cropNormalized(crop, { x: 0.16, y: 0.02, width: 0.84, height: 0.96 })
-      ),
-      masked: true,
-      trimLeft: 0.16,
-    },
-    {
-      canvas: buildWhiteTextCanvas(
-        cropNormalized(crop, { x: 0.24, y: 0.02, width: 0.76, height: 0.96 })
-      ),
-      masked: true,
-      trimLeft: 0.24,
-    },
+      trimLeft: trim.x,
+      focused: false,
+    });
+  }
+
+  const focusedSpecs = [
+    { x: 0.08, y: 0.00, width: 0.86, height: 0.72, trimLeft: 0.08 },
+    { x: 0.10, y: 0.08, width: 0.84, height: 0.72, trimLeft: 0.10 },
+    { x: 0.14, y: 0.12, width: 0.80, height: 0.66, trimLeft: 0.14 },
+    { x: 0.18, y: 0.14, width: 0.76, height: 0.62, trimLeft: 0.18 },
   ];
+
+  for (const focused of focusedSpecs) {
+    const focusCrop = cropNormalized(crop, {
+      x: focused.x,
+      y: focused.y,
+      width: focused.width,
+      height: focused.height,
+    });
+
+    variants.push({
+      canvas: focusCrop,
+      masked: false,
+      trimLeft: focused.trimLeft,
+      focused: true,
+    });
+
+    variants.push({
+      canvas: buildWhiteTextCanvas(focusCrop),
+      masked: true,
+      trimLeft: focused.trimLeft,
+      focused: true,
+    });
+  }
 
   const candidates: NumericCandidate[] = [];
 
   for (const variant of variants) {
-    for (const pageSegMode of ["7"] as const) {
-      const prepared = upscaleCanvas(variant.canvas, variant.masked ? 5 : 4);
+    const pageSegModes: Array<"6" | "7"> = variant.masked ? ["7", "6"] : ["7"];
+
+    for (const pageSegMode of pageSegModes) {
+      const prepared = upscaleCanvas(
+        variant.canvas,
+        variant.focused ? 5 : 4
+      );
 
       const ocr = await recognizeDetailed(prepared, {
         whitelist: "0123456789OoQIl|!SsBbZz,.",
         pageSegMode,
       });
 
-      const sourceWeight =
-        (variant.masked ? 1.15 : 1.0) * (pageSegMode === "7" ? 1.05 : 0.95);
+      let sourceWeight =
+        (variant.masked ? 1.15 : 1.0) *
+        (pageSegMode === "7" ? 1.05 : 0.93);
+
+      if (variant.focused) {
+        sourceWeight *= 1.10;
+      }
 
       candidates.push(
         ...extractNumericCandidatesFromOCR(ocr, sourceWeight, {
@@ -1838,22 +2043,58 @@ function extractNumericCandidatesFromOCR(
     pageSegMode: "6" | "7";
   }
 ): NumericCandidate[] {
-  const results: NumericCandidate[] = [];
+  const bestWeightByValue = new Map<string, number>();
 
-  function pushCandidate(rawValue: string, extraWeight = 1) {
-    const digits = normalizeNumericToken(rawValue);
-
+  function addDigits(digits: string, extraWeight = 1) {
     if (digits.length < 7 || digits.length > 10) {
       return;
     }
 
-    results.push({
-      value: digits,
-      weight: sourceWeight * extraWeight,
-      masked: meta.masked,
-      trimLeft: meta.trimLeft,
-      pageSegMode: meta.pageSegMode,
-    });
+    const weight = sourceWeight * extraWeight;
+    const previous = bestWeightByValue.get(digits);
+
+    if (previous === undefined || weight > previous) {
+      bestWeightByValue.set(digits, weight);
+    }
+  }
+
+  function pushCandidate(rawValue: string, extraWeight = 1) {
+    const digits = normalizeNumericToken(rawValue);
+
+    if (!digits) {
+      return;
+    }
+
+    if (digits.length >= 7 && digits.length <= 10) {
+      addDigits(digits, extraWeight);
+    }
+
+    for (const len of [10, 9, 8] as const) {
+      if (digits.length <= len) {
+        continue;
+      }
+
+      for (let start = 0; start <= digits.length - len; start += 1) {
+        const slice = digits.slice(start, start + len);
+
+        let sliceWeight = extraWeight * 0.72;
+
+        if (start === 0 || start + len === digits.length) {
+          sliceWeight *= 1.08;
+        }
+
+        addDigits(slice, sliceWeight);
+      }
+    }
+
+    if (digits.length === 8) {
+      addDigits(`${digits.slice(1)}0`, extraWeight * 0.62);
+    }
+
+    if (digits.length === 9) {
+      addDigits(digits.slice(1), extraWeight * 0.60);
+      addDigits(digits.slice(0, 8), extraWeight * 0.58);
+    }
   }
 
   const rawMatches =
@@ -1886,13 +2127,19 @@ function extractNumericCandidatesFromOCR(
       combined += wordTokens[end].value;
       minConfidence = Math.min(minConfidence, wordTokens[end].confidence);
 
-      if (combined.length >= 7 && combined.length <= 10) {
+      if (combined.length >= 7) {
         pushCandidate(combined, Math.max(0.5, minConfidence / 100) * 1.08);
       }
     }
   }
 
-  return results;
+  return [...bestWeightByValue.entries()].map(([value, weight]) => ({
+    value,
+    weight,
+    masked: meta.masked,
+    trimLeft: meta.trimLeft,
+    pageSegMode: meta.pageSegMode,
+  }));
 }
 
 function scoreNumericCandidateGroups(
@@ -1951,7 +2198,7 @@ function scoreNumericCandidateGroups(
 
   for (const value of values) {
     const entry = grouped.get(value)!;
-    const averageTrim = entry.trimTotal / entry.hits;
+    const averageTrim = entry.trimTotal / Math.max(entry.hits, 1);
     const numeric = Number(value);
 
     let score =
@@ -1962,47 +2209,205 @@ function scoreNumericCandidateGroups(
 
     if (value.length === 9) score += 18;
     else if (value.length === 8) score += 12;
-    else if (value.length === 10) score += 4;
+    else if (value.length === 10) score -= 10;
     else score -= 24;
 
-    if (averageTrim >= 0.08 && averageTrim <= 0.30) {
+    if (averageTrim >= 0.08 && averageTrim <= 0.24) {
       score += 8;
+    } else if (averageTrim > 0.24 && averageTrim <= 0.30) {
+      score += 4;
     }
+
+    let strongSameLengthFamilyWeight = 0;
+    let shorterPrefixSuffixWeight = 0;
+    let longerPrefixSuffixWeight = 0;
 
     for (const other of filtered) {
       if (other.value === value) {
         continue;
       }
 
-      score += numericStringSimilarity(value, other.value) * 8 * other.weight;
+      const similarity = numericStringSimilarity(value, other.value);
+      const prefixLen = commonPrefixLength(value, other.value);
 
-      if (
-        value.length === other.value.length + 1 &&
-        (value.startsWith(other.value) || value.endsWith(other.value))
-      ) {
-        score += 22 * other.weight;
+      if (other.value.length === value.length) {
+        if (similarity >= 0.89) {
+          score += 18 * other.weight;
+          strongSameLengthFamilyWeight += other.weight;
+        } else if (similarity >= 0.78) {
+          score += 10 * other.weight;
+          strongSameLengthFamilyWeight += other.weight * 0.75;
+        } else {
+          score += similarity * 4 * other.weight;
+        }
+
+        if (prefixLen >= value.length - 1) {
+          score += 8 * other.weight;
+        } else if (prefixLen >= value.length - 2) {
+          score += 4 * other.weight;
+        }
+
+        continue;
       }
 
-      if (
-        other.value.length === value.length + 1 &&
-        (other.value.startsWith(value) || other.value.endsWith(value))
-      ) {
-        score -= 18 * other.weight;
+      const valueContainsOtherAsPrefixOrSuffix =
+        value.startsWith(other.value) || value.endsWith(other.value);
+
+      const otherContainsValueAsPrefixOrSuffix =
+        other.value.startsWith(value) || other.value.endsWith(value);
+
+      if (value.length === other.value.length + 1) {
+        if (valueContainsOtherAsPrefixOrSuffix) {
+          score -= 42 * other.weight;
+          shorterPrefixSuffixWeight += other.weight;
+        } else if (similarity >= 0.78) {
+          score -= 16 * other.weight;
+        } else {
+          score += similarity * 2 * other.weight;
+        }
+
+        continue;
       }
 
-      if (
-        value.length === other.value.length + 2 &&
-        (value.startsWith(other.value) || value.endsWith(other.value))
-      ) {
-        score += 10 * other.weight;
+      if (other.value.length === value.length + 1) {
+        if (otherContainsValueAsPrefixOrSuffix) {
+          score += 12 * other.weight;
+          longerPrefixSuffixWeight += other.weight;
+        } else if (similarity >= 0.78) {
+          score += 6 * other.weight;
+        }
+
+        continue;
       }
 
-      if (
-        other.value.length === value.length + 2 &&
-        (other.value.startsWith(value) || other.value.endsWith(value))
-      ) {
-        score -= 8 * other.weight;
+      if (value.length === other.value.length + 2) {
+        if (valueContainsOtherAsPrefixOrSuffix) {
+          score -= 54 * other.weight;
+          shorterPrefixSuffixWeight += other.weight * 1.25;
+        } else if (similarity >= 0.75) {
+          score -= 12 * other.weight;
+        }
+
+        continue;
       }
+
+      if (other.value.length === value.length + 2) {
+        if (otherContainsValueAsPrefixOrSuffix) {
+          score += 8 * other.weight;
+          longerPrefixSuffixWeight += other.weight * 0.75;
+        } else if (similarity >= 0.75) {
+          score += 4 * other.weight;
+        }
+
+        continue;
+      }
+
+      score += similarity * 1.5 * other.weight;
+    }
+
+    if (strongSameLengthFamilyWeight >= 1.2) {
+      score += 12 * strongSameLengthFamilyWeight;
+    }
+
+    if (shorterPrefixSuffixWeight > 0) {
+      score -= 18 * shorterPrefixSuffixWeight;
+    }
+
+    if (
+      value.length >= 9 &&
+      shorterPrefixSuffixWeight >= 0.8 &&
+      strongSameLengthFamilyWeight >= shorterPrefixSuffixWeight * 0.6
+    ) {
+      score -= 34;
+    }
+
+    if (
+      value.length === 10 &&
+      strongSameLengthFamilyWeight >= 1.2
+    ) {
+      score -= 18;
+    }
+
+    if (
+      value.length === 8 &&
+      longerPrefixSuffixWeight >= 0.8 &&
+      strongSameLengthFamilyWeight >= 0.8
+    ) {
+      score += 10;
+    }
+
+    let repairBoost = 0;
+    let rawSiblingPenalty = 0;
+    let nineDigitSandwichBoost = 0;
+
+    if (
+      value.length === 8 &&
+      entry.hits >= 4 &&
+      entry.psm7Hits >= 4 &&
+      entry.maskedHits <= Math.floor(entry.hits / 2)
+    ) {
+      for (const otherValue of values) {
+        if (otherValue === value || otherValue.length !== 8) {
+          continue;
+        }
+
+        const otherEntry = grouped.get(otherValue)!;
+
+        if (otherValue.slice(1) + "0" === value) {
+          repairBoost += otherEntry.totalWeight * 22 + otherEntry.hits * 6;
+        }
+
+        if (value.slice(1) + "0" === otherValue) {
+          rawSiblingPenalty += otherEntry.totalWeight * 18 + otherEntry.hits * 5;
+        }
+      }
+    }
+
+    if (repairBoost > 0 && strongSameLengthFamilyWeight < 0.9) {
+      score += repairBoost;
+
+      if (value.endsWith("0")) {
+        score += 12;
+      }
+    }
+
+    if (rawSiblingPenalty > 0 && strongSameLengthFamilyWeight < 0.9) {
+      score -= rawSiblingPenalty;
+    }
+
+    if (value.length === 9 && entry.hits >= 6 && entry.psm7Hits >= 4) {
+      const dropFirst = value.slice(1);
+      const dropLast = value.slice(0, 8);
+
+      const dropFirstEntry = grouped.get(dropFirst);
+      const dropLastEntry = grouped.get(dropLast);
+
+      if (dropFirstEntry && dropLastEntry) {
+        const comparableHits =
+          entry.hits >= Math.max(dropFirstEntry.hits, dropLastEntry.hits) * 0.85;
+
+        const comparableWeight =
+          entry.totalWeight >=
+          Math.max(dropFirstEntry.totalWeight, dropLastEntry.totalWeight) * 0.9;
+
+        const comparablePsm7 =
+          entry.psm7Hits >=
+          Math.max(dropFirstEntry.psm7Hits, dropLastEntry.psm7Hits) * 0.8;
+
+        if (comparableHits && comparableWeight && comparablePsm7) {
+          nineDigitSandwichBoost =
+            (dropFirstEntry.totalWeight + dropLastEntry.totalWeight) * 40 +
+            (dropFirstEntry.hits + dropLastEntry.hits) * 12;
+
+          if (value.startsWith("1")) {
+            nineDigitSandwichBoost += 36;
+          }
+        }
+      }
+    }
+
+    if (nineDigitSandwichBoost > 0) {
+      score += nineDigitSandwichBoost;
     }
 
     scored.push({
@@ -2014,6 +2419,10 @@ function scoreNumericCandidateGroups(
   scored.sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score;
+    }
+
+    if (right.hits !== left.hits) {
+      return right.hits - left.hits;
     }
 
     return Number(right.value) - Number(left.value);
