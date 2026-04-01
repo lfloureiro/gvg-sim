@@ -1548,45 +1548,196 @@ function cropTopPortion(
   });
 }
 
-async function readBestNumberFromRow(
-  crop: HTMLCanvasElement
-): Promise<number> {
-  for (const stage of NUMBER_READ_STAGES) {
-    const stageCrop = cropTopPortion(crop, stage.height);
-    const candidates = await collectNumericCandidatesFromRow(stageCrop);
-    const value = chooseBestNumericCandidate(candidates);
+type NumericStagePick = {
+  label: string;
+  value: number;
+  score: number;
+  hits: number;
+};
 
-    if (value > 0) {
-      return value;
+function buildNumericCandidateLines(groups: NumericCandidateGroup[]): string[] {
+  if (!groups.length) {
+    return ["No valid numeric candidates"];
+  }
+
+  return groups.slice(0, 8).map((group, index) => {
+    const sourceList = group.sources.slice(0, 6).join(", ");
+
+    return [
+      `#${index + 1}`,
+      group.value,
+      `score=${group.score.toFixed(1)}`,
+      `hits=${group.hits}`,
+      `w=${group.totalWeight.toFixed(2)}`,
+      `masked=${group.maskedHits}`,
+      `trim=${(group.trimTotal / Math.max(group.hits, 1)).toFixed(2)}`,
+      `psm7=${group.psm7Hits}`,
+      `psm6=${group.psm6Hits}`,
+      sourceList ? `src=${sourceList}` : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  });
+}
+
+function getStageBias(label: string): number {
+  switch (label) {
+    case "top-58%":
+      return 60;
+    case "top-72%":
+      return 40;
+    case "top-86%":
+      return 20;
+    case "full":
+    default:
+      return 0;
+  }
+}
+
+function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null {
+  if (!picks.length) {
+    return null;
+  }
+
+  const byValue = new Map<number, NumericStagePick[]>();
+
+  for (const pick of picks) {
+    const current = byValue.get(pick.value) ?? [];
+    current.push(pick);
+    byValue.set(pick.value, current);
+  }
+
+  let bestConsensus: NumericStagePick[] | null = null;
+
+  for (const group of byValue.values()) {
+    if (group.length < 2) {
+      continue;
+    }
+
+    const sorted = [...group].sort((a, b) => b.score - a.score);
+
+    if (!bestConsensus) {
+      bestConsensus = sorted;
+      continue;
+    }
+
+    if (sorted.length > bestConsensus.length) {
+      bestConsensus = sorted;
+      continue;
+    }
+
+    if (
+      sorted.length === bestConsensus.length &&
+      sorted[0].score > bestConsensus[0].score
+    ) {
+      bestConsensus = sorted;
     }
   }
 
-  return 0;
+  if (bestConsensus) {
+    return bestConsensus[0];
+  }
+
+  let best = picks[0];
+  let bestComposite = best.score + getStageBias(best.label);
+
+  for (const pick of picks.slice(1)) {
+    const composite = pick.score + getStageBias(pick.label);
+
+    if (composite > bestComposite) {
+      best = pick;
+      bestComposite = composite;
+      continue;
+    }
+
+    if (composite === bestComposite) {
+      if (pick.hits > best.hits) {
+        best = pick;
+        bestComposite = composite;
+        continue;
+      }
+
+      if (pick.hits === best.hits && pick.score > best.score) {
+        best = pick;
+        bestComposite = composite;
+      }
+    }
+  }
+
+  return best;
+}
+
+async function evaluateNumberStage(
+  crop: HTMLCanvasElement,
+  stage: { label: string; height: number }
+): Promise<{
+  pick: NumericStagePick | null;
+  candidateLines: string[];
+}> {
+  const stageCrop = cropTopPortion(crop, stage.height);
+  const candidates = await collectNumericCandidatesFromRow(stageCrop);
+  const groups = scoreNumericCandidateGroups(candidates);
+
+  if (!groups.length) {
+    return {
+      pick: null,
+      candidateLines: [`[${stage.label}] picked=0`, "  No valid numeric candidates"],
+    };
+  }
+
+  const best = groups[0];
+
+  return {
+    pick: {
+      label: stage.label,
+      value: Number(best.value),
+      score: best.score,
+      hits: best.hits,
+    },
+    candidateLines: [
+      `[${stage.label}] picked=${best.value}`,
+      ...buildNumericCandidateLines(groups).map((line) => `  ${line}`),
+    ],
+  };
+}
+
+async function readBestNumberFromRow(
+  crop: HTMLCanvasElement
+): Promise<number> {
+  const picks: NumericStagePick[] = [];
+
+  for (const stage of NUMBER_READ_STAGES) {
+    const result = await evaluateNumberStage(crop, stage);
+
+    if (result.pick) {
+      picks.push(result.pick);
+    }
+  }
+
+  const best = chooseBestStagePick(picks);
+  return best?.value ?? 0;
 }
 
 async function readBestNumberFromRowDebug(
   crop: HTMLCanvasElement
 ): Promise<NumericReadDebug> {
   const debugLines: string[] = [];
+  const picks: NumericStagePick[] = [];
 
   for (const stage of NUMBER_READ_STAGES) {
-    const stageCrop = cropTopPortion(crop, stage.height);
-    const candidates = await collectNumericCandidatesFromRow(stageCrop);
-    const result = chooseBestNumericCandidateDetailed(candidates);
+    const result = await evaluateNumberStage(crop, stage);
+    debugLines.push(...result.candidateLines);
 
-    debugLines.push(`[${stage.label}] picked=${result.value || 0}`);
-    debugLines.push(...result.candidateLines.map((line) => `  ${line}`));
-
-    if (result.value > 0) {
-      return {
-        value: result.value,
-        candidateLines: debugLines,
-      };
+    if (result.pick) {
+      picks.push(result.pick);
     }
   }
 
+  const best = chooseBestStagePick(picks);
+  debugLines.push(`FINAL=${best?.value ?? 0}`);
+
   return {
-    value: 0,
+    value: best?.value ?? 0,
     candidateLines: debugLines.length
       ? debugLines
       : ["No valid numeric candidates"],
@@ -1654,7 +1805,7 @@ async function collectNumericCandidatesFromRow(
   const candidates: NumericCandidate[] = [];
 
   for (const variant of variants) {
-    for (const pageSegMode of ["7", "6"] as const) {
+    for (const pageSegMode of ["7"] as const) {
       const prepared = upscaleCanvas(variant.canvas, variant.masked ? 5 : 4);
 
       const ocr = await recognizeDetailed(prepared, {
@@ -1742,154 +1893,6 @@ function extractNumericCandidatesFromOCR(
   }
 
   return results;
-}
-
-function chooseBestNumericCandidate(candidates: NumericCandidate[]): number {
-  const filtered = candidates
-    .map((candidate) => ({
-      ...candidate,
-      value: candidate.value.replace(/^0+/, "") || "0",
-    }))
-    .filter((candidate) => /^\d+$/.test(candidate.value))
-    .filter((candidate) => candidate.value.length >= 8 && candidate.value.length <= 10)
-    .filter((candidate) => {
-      const numeric = Number(candidate.value);
-      return Number.isFinite(numeric) && numeric >= 1000000 && numeric <= 500000000;
-    });
-
-  if (!filtered.length) {
-    return 0;
-  }
-
-  const grouped = new Map<
-    string,
-    {
-      totalWeight: number;
-      hits: number;
-      maskedHits: number;
-      trimTotal: number;
-    }
-  >();
-
-  for (const candidate of filtered) {
-    const current = grouped.get(candidate.value) ?? {
-      totalWeight: 0,
-      hits: 0,
-      maskedHits: 0,
-      trimTotal: 0,
-    };
-
-    current.totalWeight += candidate.weight;
-    current.hits += 1;
-    current.maskedHits += candidate.masked ? 1 : 0;
-    current.trimTotal += candidate.trimLeft;
-
-    grouped.set(candidate.value, current);
-  }
-
-  const values = [...grouped.keys()];
-
-  let best = values[0];
-  let bestScore = Number.NEGATIVE_INFINITY;
-
-  for (const value of values) {
-    const entry = grouped.get(value)!;
-    const averageTrim = entry.trimTotal / entry.hits;
-    const numeric = Number(value);
-
-    let score =
-      entry.totalWeight * 120 +
-      entry.hits * 24 +
-      entry.maskedHits * 8 +
-      Math.min(14, Math.log10(Math.max(numeric, 1)) * 2);
-
-    if (value.length === 9) score += 18;
-    else if (value.length === 8) score += 12;
-    else if (value.length === 10) score += 4;
-    else score -= 24;
-
-    if (averageTrim >= 0.08 && averageTrim <= 0.30) {
-      score += 8;
-    }
-
-    for (const other of filtered) {
-      if (other.value === value) {
-        continue;
-      }
-
-      score += numericStringSimilarity(value, other.value) * 8 * other.weight;
-
-      if (
-        value.length === other.value.length + 1 &&
-        (value.startsWith(other.value) || value.endsWith(other.value))
-      ) {
-        score += 22 * other.weight;
-      }
-
-      if (
-        other.value.length === value.length + 1 &&
-        (other.value.startsWith(value) || other.value.endsWith(value))
-      ) {
-        score -= 18 * other.weight;
-      }
-
-      if (
-        value.length === other.value.length + 2 &&
-        (value.startsWith(other.value) || value.endsWith(other.value))
-      ) {
-        score += 10 * other.weight;
-      }
-
-      if (
-        other.value.length === value.length + 2 &&
-        (other.value.startsWith(value) || other.value.endsWith(value))
-      ) {
-        score -= 8 * other.weight;
-      }
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = value;
-    }
-  }
-
-  return Number(best);
-}
-
-function chooseBestNumericCandidateDetailed(
-  candidates: NumericCandidate[]
-): NumericReadDebug {
-  const groups = scoreNumericCandidateGroups(candidates);
-
-  if (!groups.length) {
-    return {
-      value: 0,
-      candidateLines: ["No valid numeric candidates"],
-    };
-  }
-
-  return {
-    value: Number(groups[0].value),
-    candidateLines: groups.slice(0, 8).map((group, index) => {
-      const sourceList = group.sources.slice(0, 6).join(", ");
-
-      return [
-        `#${index + 1}`,
-        group.value,
-        `score=${group.score.toFixed(1)}`,
-        `hits=${group.hits}`,
-        `w=${group.totalWeight.toFixed(2)}`,
-        `masked=${group.maskedHits}`,
-        `trim=${(group.trimTotal / Math.max(group.hits, 1)).toFixed(2)}`,
-        `psm7=${group.psm7Hits}`,
-        `psm6=${group.psm6Hits}`,
-        sourceList ? `src=${sourceList}` : "",
-      ]
-        .filter(Boolean)
-        .join(" | ");
-    }),
-  };
 }
 
 function scoreNumericCandidateGroups(
