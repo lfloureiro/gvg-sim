@@ -531,7 +531,7 @@ export async function analyzeEnemyImages(
         const { individualMight, heroMight } = await extractMightPair(
           analysisCanvas,
           layout.topInfoRect,
-          "fast"
+          "full"
         );
 
         onProgress?.({
@@ -571,76 +571,80 @@ export async function analyzeEnemyImages(
 export async function analyzeEnemyImageDebug(
   file: File
 ): Promise<DebugAnalysisResult> {
-  const totalStart = nowMs();
+  try {
+    const totalStart = nowMs();
 
-  const loadStart = nowMs();
-  const rootCanvas = await fileToCanvas(file);
-  const analysisCanvas = buildAnalysisCanvas(rootCanvas);
-  const loadMs = nowMs() - loadStart;
+    const loadStart = nowMs();
+    const rootCanvas = await fileToCanvas(file);
+    const analysisCanvas = buildAnalysisCanvas(rootCanvas);
+    const loadMs = nowMs() - loadStart;
 
-  const layoutStart = nowMs();
-  const layout = await detectLayout(analysisCanvas);
-  const layoutMs = nowMs() - layoutStart;
+    const layoutStart = nowMs();
+    const layout = await detectLayout(analysisCanvas);
+    const layoutMs = nowMs() - layoutStart;
 
-  const nameStart = nowMs();
-  const chiefName = await extractChiefName(
-    analysisCanvas,
-    layout.topInfoRect,
-    layout.nameRect
-  );
-  const nameMs = nowMs() - nameStart;
+    const nameStart = nowMs();
+    const chiefName = await extractChiefName(
+      analysisCanvas,
+      layout.topInfoRect,
+      layout.nameRect
+    );
+    const nameMs = nowMs() - nameStart;
 
-  const mightStart = nowMs();
-  const mightDebug = await extractMightPairDebug(
-    analysisCanvas,
-    layout.topInfoRect
-  );
-  const mightMs = nowMs() - mightStart;
+    const mightStart = nowMs();
+    const mightDebug = await extractMightPairDebug(
+      analysisCanvas,
+      layout.topInfoRect
+    );
+    const mightMs = nowMs() - mightStart;
 
-  const artifactsStart = nowMs();
-  const slots = analyzeSlots(analysisCanvas, layout);
-  const armyScores = buildArmyScores(slots);
-  const armyType = decideArmyType(armyScores, slots);
-  const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
-  const artifactsMs = nowMs() - artifactsStart;
+    const artifactsStart = nowMs();
+    const slots = analyzeSlots(analysisCanvas, layout);
+    const armyScores = buildArmyScores(slots);
+    const armyType = decideArmyType(armyScores, slots);
+    const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
+    const artifactsMs = nowMs() - artifactsStart;
 
-  const cropsStart = nowMs();
-  const crops = buildDebugCrops(
-    analysisCanvas,
-    layout,
-    chiefName,
-    mightDebug.individualMight,
-    slots,
-    mightDebug.candidateLines
-  );
-  const cropsMs = nowMs() - cropsStart;
+    const cropsStart = nowMs();
+    const crops = buildDebugCrops(
+      analysisCanvas,
+      layout,
+      chiefName,
+      mightDebug.individualMight,
+      slots,
+      mightDebug.candidateLines
+    );
+    const cropsMs = nowMs() - cropsStart;
 
-  const totalMs = nowMs() - totalStart;
+    const totalMs = nowMs() - totalStart;
 
-  return {
-    fileName: file.name,
-    imageUrl: canvasToDataUrl(analysisCanvas),
-    imageWidth: analysisCanvas.width,
-    imageHeight: analysisCanvas.height,
-    layout,
-    chiefName,
-    individualMight: mightDebug.individualMight,
-    heroMight: mightDebug.heroMight,
-    armyType,
-    confidence,
-    slots,
-    mightDebugLines: mightDebug.candidateLines,
-    crops,
-    timings: {
-      totalMs,
-      loadMs,
-      layoutMs,
-      nameMs,
-      mightMs,
-      artifactsMs,
-      cropsMs,
-    },
-  };
+    return {
+      fileName: file.name,
+      imageUrl: canvasToDataUrl(analysisCanvas),
+      imageWidth: analysisCanvas.width,
+      imageHeight: analysisCanvas.height,
+      layout,
+      chiefName,
+      individualMight: mightDebug.individualMight,
+      heroMight: mightDebug.heroMight,
+      armyType,
+      confidence,
+      slots,
+      mightDebugLines: mightDebug.candidateLines,
+      crops,
+      timings: {
+        totalMs,
+        loadMs,
+        layoutMs,
+        nameMs,
+        mightMs,
+        artifactsMs,
+        cropsMs,
+      },
+    };
+  } finally {
+    await disposeOcrWorker();
+  }
 }
 
 export function groupRowsByArmy(
@@ -1861,13 +1865,14 @@ async function evaluateNumberStage(
 
   const bestPrimary = groups[0];
 
-  const needsPsm6Rescue =
-    mode === "full" &&
-    (
-      !bestPrimary ||
-      bestPrimary.hits < 3 ||
-      bestPrimary.score < 700
-    );
+const needsPsm6Rescue =
+  mode === "full" &&
+  stage.label === "full" &&
+  (
+    !bestPrimary ||
+    bestPrimary.hits < 3 ||
+    bestPrimary.score < 700
+  );
 
   if (needsPsm6Rescue) {
     const rescueCandidates = await collectNumericCandidatesFromRow(
@@ -2234,26 +2239,43 @@ function extractNumericCandidatesFromOCR(
       addDigits(digits, extraWeight);
     }
 
-    for (const len of [10, 9, 8] as const) {
-      if (digits.length <= len) {
-        continue;
-      }
+for (const len of [10, 9, 8] as const) {
+  if (digits.length <= len) {
+    continue;
+  }
 
-      for (let start = 0; start <= digits.length - len; start += 1) {
-        const slice = digits.slice(start, start + len);
+  for (let start = 0; start <= digits.length - len; start += 1) {
+    const slice = digits.slice(start, start + len);
 
-        let sliceWeight = extraWeight * 0.72;
+    let sliceWeight = extraWeight * 0.72;
 
-        if (start === 0 || start + len === digits.length) {
-          sliceWeight *= 1.08;
-        }
+    if (start === 0 || start + len === digits.length) {
+      sliceWeight *= 1.08;
+    }
 
-        addDigits(slice, sliceWeight);
+    addDigits(slice, sliceWeight);
+
+    if (len === 8) {
+      addDigits(`${slice.slice(1)}0`, sliceWeight * 0.62);
+
+      if (slice.endsWith("0")) {
+        addDigits(`${slice.slice(0, 7)}8`, sliceWeight * 0.46);
       }
     }
 
+    if (len === 9) {
+      addDigits(slice.slice(1), sliceWeight * 0.60);
+      addDigits(slice.slice(0, 8), sliceWeight * 0.58);
+    }
+  }
+}
+
     if (digits.length === 8) {
       addDigits(`${digits.slice(1)}0`, extraWeight * 0.62);
+
+      if (digits.endsWith("0")) {
+        addDigits(`${digits.slice(0, 7)}8`, extraWeight * 0.46);
+      }
     }
 
     if (digits.length === 9) {
@@ -2501,79 +2523,252 @@ function scoreNumericCandidateGroups(
       score += 10;
     }
 
-    let repairBoost = 0;
-    let rawSiblingPenalty = 0;
-    let nineDigitSandwichBoost = 0;
+let repairBoost = 0;
+let rawSiblingPenalty = 0;
+let nineDigitSandwichBoost = 0;
+let oneSidedNineDigitBoost = 0;
+let oneSidedEightDigitPenalty = 0;
+let trailingEightRepairBoost = 0;
+let trailingZeroSiblingPenalty = 0;
 
-    if (
-      value.length === 8 &&
-      entry.hits >= 4 &&
-      entry.psm7Hits >= 4 &&
-      entry.maskedHits <= Math.floor(entry.hits / 2)
-    ) {
-      for (const otherValue of values) {
-        if (otherValue === value || otherValue.length !== 8) {
-          continue;
-        }
+if (
+  value.length === 8 &&
+  entry.hits >= 4 &&
+  entry.psm7Hits >= 4 &&
+  entry.maskedHits <= Math.floor(entry.hits / 2)
+) {
+  for (const otherValue of values) {
+    if (otherValue === value || otherValue.length !== 8) {
+      continue;
+    }
 
-        const otherEntry = grouped.get(otherValue)!;
+    const otherEntry = grouped.get(otherValue)!;
 
-        if (otherValue.slice(1) + "0" === value) {
-          repairBoost += otherEntry.totalWeight * 22 + otherEntry.hits * 6;
-        }
+    if (otherValue.slice(1) + "0" === value) {
+      repairBoost += otherEntry.totalWeight * 22 + otherEntry.hits * 6;
+    }
 
-        if (value.slice(1) + "0" === otherValue) {
-          rawSiblingPenalty += otherEntry.totalWeight * 18 + otherEntry.hits * 5;
-        }
+    if (value.slice(1) + "0" === otherValue) {
+      rawSiblingPenalty += otherEntry.totalWeight * 18 + otherEntry.hits * 5;
+    }
+  }
+}
+
+if (repairBoost > 0 && strongSameLengthFamilyWeight < 0.9) {
+  score += repairBoost;
+
+  if (value.endsWith("0")) {
+    score += 12;
+  }
+}
+
+if (rawSiblingPenalty > 0 && strongSameLengthFamilyWeight < 0.9) {
+  score -= rawSiblingPenalty;
+}
+
+if (value.length === 8) {
+  if (value.endsWith("8")) {
+    const zeroSiblingValue = `${value.slice(0, 7)}0`;
+    const zeroSibling = grouped.get(zeroSiblingValue);
+
+    if (zeroSibling) {
+      const enoughPresence =
+        entry.hits >= 1 &&
+        entry.psm7Hits >= 1 &&
+        entry.totalWeight >= zeroSibling.totalWeight * 0.16;
+
+      if (enoughPresence) {
+        trailingEightRepairBoost =
+          zeroSibling.totalWeight * 62 +
+          zeroSibling.hits * 18 +
+          zeroSibling.psm7Hits * 6;
       }
     }
+  }
 
-    if (repairBoost > 0 && strongSameLengthFamilyWeight < 0.9) {
-      score += repairBoost;
+  if (value.endsWith("0")) {
+    const eightSiblingValue = `${value.slice(0, 7)}8`;
+    const eightSibling = grouped.get(eightSiblingValue);
 
-      if (value.endsWith("0")) {
-        score += 12;
+    if (eightSibling) {
+      const siblingLooksReal =
+        eightSibling.hits >= 1 &&
+        eightSibling.psm7Hits >= 1 &&
+        eightSibling.totalWeight >= entry.totalWeight * 0.16;
+
+      if (siblingLooksReal) {
+        trailingZeroSiblingPenalty =
+          eightSibling.totalWeight * 50 +
+          eightSibling.hits * 14 +
+          eightSibling.psm7Hits * 5;
       }
     }
+  }
+}
 
-    if (rawSiblingPenalty > 0 && strongSameLengthFamilyWeight < 0.9) {
-      score -= rawSiblingPenalty;
-    }
+if (value.length === 9 && entry.hits >= 4 && entry.psm7Hits >= 3) {
+  const dropFirst = value.slice(1);
+  const dropLast = value.slice(0, 8);
 
-    if (value.length === 9 && entry.hits >= 6 && entry.psm7Hits >= 4) {
-      const dropFirst = value.slice(1);
-      const dropLast = value.slice(0, 8);
+  const dropFirstEntry = grouped.get(dropFirst);
+  const dropLastEntry = grouped.get(dropLast);
 
-      const dropFirstEntry = grouped.get(dropFirst);
-      const dropLastEntry = grouped.get(dropLast);
+  if (dropFirstEntry && dropLastEntry) {
+    const bestChildHits = Math.max(dropFirstEntry.hits, dropLastEntry.hits);
+    const bestChildWeight = Math.max(
+      dropFirstEntry.totalWeight,
+      dropLastEntry.totalWeight
+    );
+    const bestChildPsm7 = Math.max(
+      dropFirstEntry.psm7Hits,
+      dropLastEntry.psm7Hits
+    );
 
-      if (dropFirstEntry && dropLastEntry) {
-        const comparableHits =
-          entry.hits >= Math.max(dropFirstEntry.hits, dropLastEntry.hits) * 0.85;
+    const comparableHits =
+      entry.hits >= bestChildHits * 0.78;
 
-        const comparableWeight =
-          entry.totalWeight >=
-          Math.max(dropFirstEntry.totalWeight, dropLastEntry.totalWeight) * 0.9;
+    const comparableWeight =
+      entry.totalWeight >= bestChildWeight * 0.72;
 
-        const comparablePsm7 =
-          entry.psm7Hits >=
-          Math.max(dropFirstEntry.psm7Hits, dropLastEntry.psm7Hits) * 0.8;
+    const comparablePsm7 =
+      entry.psm7Hits >= Math.max(2, bestChildPsm7 * 0.6);
 
-        if (comparableHits && comparableWeight && comparablePsm7) {
-          nineDigitSandwichBoost =
-            (dropFirstEntry.totalWeight + dropLastEntry.totalWeight) * 40 +
-            (dropFirstEntry.hits + dropLastEntry.hits) * 12;
+    if (comparableHits && comparableWeight && comparablePsm7) {
+      const combinedChildWeight =
+        dropFirstEntry.totalWeight + dropLastEntry.totalWeight;
+      const combinedChildHits =
+        dropFirstEntry.hits + dropLastEntry.hits;
+      const combinedChildPsm7 =
+        dropFirstEntry.psm7Hits + dropLastEntry.psm7Hits;
 
-          if (value.startsWith("1")) {
-            nineDigitSandwichBoost += 36;
-          }
-        }
+      let boost =
+        combinedChildWeight * 58 +
+        combinedChildHits * 18 +
+        combinedChildPsm7 * 6;
+
+      if (value.startsWith("1")) {
+        boost += 48;
+      }
+
+      if (boost > nineDigitSandwichBoost) {
+        nineDigitSandwichBoost = boost;
       }
     }
+  }
+}
 
-    if (nineDigitSandwichBoost > 0) {
-      score += nineDigitSandwichBoost;
+/**
+ * Novo caso: o pai de 9 dígitos só tem UM filho forte de 8 dígitos.
+ * Exemplo típico:
+ *   109116342  vs  10911634
+ */
+if (value.length === 9 && entry.hits >= 6 && entry.psm7Hits >= 4) {
+  for (const otherValue of values) {
+    if (otherValue.length !== 8) {
+      continue;
     }
+
+    const isChild =
+      value.startsWith(otherValue) || value.endsWith(otherValue);
+
+    if (!isChild) {
+      continue;
+    }
+
+    const childEntry = grouped.get(otherValue)!;
+
+    const comparableHits =
+      entry.hits >= childEntry.hits * 0.92;
+
+    const strongerWeight =
+      entry.totalWeight >= childEntry.totalWeight * 1.08;
+
+    const comparablePsm7 =
+      entry.psm7Hits >= Math.max(2, childEntry.psm7Hits * 0.75);
+
+    if (comparableHits && strongerWeight && comparablePsm7) {
+      let boost =
+        childEntry.totalWeight * 34 +
+        childEntry.hits * 10;
+
+      if (value.startsWith(otherValue)) {
+        boost += 24;
+      }
+
+      if (value.startsWith("1")) {
+        boost += 18;
+      }
+
+      if (boost > oneSidedNineDigitBoost) {
+        oneSidedNineDigitBoost = boost;
+      }
+    }
+  }
+}
+
+/**
+ * Penaliza o filho de 8 dígitos quando existe um pai de 9 dígitos
+ * claramente mais forte e com suporte semelhante.
+ */
+if (value.length === 8 && entry.hits >= 6 && entry.psm7Hits >= 4) {
+  for (const otherValue of values) {
+    if (otherValue.length !== 9) {
+      continue;
+    }
+
+    const isParent =
+      otherValue.startsWith(value) || otherValue.endsWith(value);
+
+    if (!isParent) {
+      continue;
+    }
+
+    const parentEntry = grouped.get(otherValue)!;
+
+    const comparableHits =
+      parentEntry.hits >= entry.hits * 0.92;
+
+    const strongerWeight =
+      parentEntry.totalWeight >= entry.totalWeight * 1.08;
+
+    const comparablePsm7 =
+      parentEntry.psm7Hits >= Math.max(2, entry.psm7Hits * 0.75);
+
+    if (comparableHits && strongerWeight && comparablePsm7) {
+      let penalty =
+        parentEntry.totalWeight * 28 +
+        parentEntry.hits * 8;
+
+      if (otherValue.startsWith(value)) {
+        penalty += 18;
+      }
+
+      if (penalty > oneSidedEightDigitPenalty) {
+        oneSidedEightDigitPenalty = penalty;
+      }
+    }
+  }
+}
+
+if (nineDigitSandwichBoost > 0) {
+  score += nineDigitSandwichBoost;
+}
+
+if (oneSidedNineDigitBoost > 0) {
+  score += oneSidedNineDigitBoost;
+}
+
+if (oneSidedEightDigitPenalty > 0 && strongSameLengthFamilyWeight < 1.6) {
+  score -= oneSidedEightDigitPenalty;
+}
+
+if (trailingEightRepairBoost > 0 && strongSameLengthFamilyWeight < 2.2) {
+  score += trailingEightRepairBoost;
+}
+
+if (trailingZeroSiblingPenalty > 0 && strongSameLengthFamilyWeight < 2.2) {
+  score -= trailingZeroSiblingPenalty;
+}
 
     scored.push({
       ...entry,
