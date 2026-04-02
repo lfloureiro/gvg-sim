@@ -514,7 +514,7 @@ export async function analyzeEnemyImages(
           step: "Reading chief name",
         });
 
-        const chiefName = await extractChiefName(
+        let chiefName = await extractChiefName(
           analysisCanvas,
           layout.topInfoRect,
           layout.nameRect,
@@ -528,11 +528,35 @@ export async function analyzeEnemyImages(
           step: "Reading might values",
         });
 
-        const { individualMight, heroMight } = await extractMightPair(
+        let { individualMight, heroMight } = await extractMightPair(
           analysisCanvas,
           layout.topInfoRect,
           "full"
         );
+
+        if (chiefName === "Unknown" || individualMight === 0) {
+          const retryLayout = await detectLayout(analysisCanvas);
+          const retryName = await extractChiefName(
+            analysisCanvas,
+            retryLayout.topInfoRect,
+            retryLayout.nameRect
+          );
+
+          const retryMight = await extractMightPair(
+            analysisCanvas,
+            retryLayout.topInfoRect,
+            "full"
+          );
+
+          if (retryName !== "Unknown") {
+            chiefName = retryName;
+          }
+
+          if (retryMight.individualMight > individualMight) {
+            individualMight = retryMight.individualMight;
+            heroMight = retryMight.heroMight;
+          }
+        }
 
         onProgress?.({
           current: index + 1,
@@ -1788,10 +1812,20 @@ function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null
     if (consensusValue.length === 8) {
       const nineDigitParent = picks
         .filter((pick) => String(pick.value).length === 9)
-        .filter((pick) => pick.label !== "top-58%")
         .filter((pick) => {
           const nine = String(pick.value);
-          return nine.slice(1) === consensusValue || nine.slice(0, 8) === consensusValue;
+          const isParent =
+            nine.slice(1) === consensusValue || nine.slice(0, 8) === consensusValue;
+
+          if (!isParent) {
+            return false;
+          }
+
+          if (pick.label !== "top-58%") {
+            return true;
+          }
+
+          return nine.startsWith(consensusValue);
         })
         .sort((left, right) => {
           if (right.score !== left.score) {
@@ -1806,8 +1840,11 @@ function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null
         })[0];
 
       if (nineDigitParent) {
-        const comparableScore = nineDigitParent.score >= consensusBest.score * 0.97;
-        const comparableHits = nineDigitParent.hits >= Math.max(1, consensusBest.hits - 1);
+        const parentValue = String(nineDigitParent.value);
+        const isPrefixParent = parentValue.startsWith(consensusValue);
+
+        const comparableScore = nineDigitParent.score >= consensusBest.score * (isPrefixParent ? 0.86 : 0.97);
+        const comparableHits = nineDigitParent.hits >= Math.max(1, consensusBest.hits - (isPrefixParent ? 3 : 1));
 
         if (comparableScore && comparableHits) {
           return nineDigitParent;
@@ -1879,10 +1916,14 @@ const needsPsm6Rescue =
       stageCrop,
       "full_with_psm6"
     );
-    const rescueGroups = scoreNumericCandidateGroups(rescueCandidates);
 
-    if (rescueGroups.length) {
-      groups = rescueGroups;
+    const mergedGroups = scoreNumericCandidateGroups([
+      ...candidates,
+      ...rescueCandidates,
+    ]);
+
+    if (mergedGroups.length) {
+      groups = mergedGroups;
     }
   }
 
@@ -2169,8 +2210,16 @@ async function collectNumericCandidatesFromRow(
   const candidates: NumericCandidate[] = [];
 
   for (const variant of variants) {
+    const allowRawPsm6 =
+      usePsm6 &&
+      !variant.masked &&
+      (
+        (!variant.focused && variant.trimLeft <= 0.12) ||
+        (variant.focused && variant.trimLeft <= 0.10)
+      );
+
     const pageSegModes: Array<"6" | "7"> =
-      usePsm6 && variant.masked ? ["7", "6"] : ["7"];
+      usePsm6 && (variant.masked || allowRawPsm6) ? ["7", "6"] : ["7"];
 
     for (const pageSegMode of pageSegModes) {
       const prepared = upscaleCanvas(
