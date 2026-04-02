@@ -56,6 +56,22 @@ type OCRWord = {
   confidence: number;
 };
 
+type OCRWordBox = {
+  text: string;
+  confidence: number;
+  bbox: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  };
+};
+
+type OCRResultWithBoxesLite = {
+  text: string;
+  words: OCRWordBox[];
+};
+
 type OCRResultLite = {
   text: string;
   words: OCRWord[];
@@ -134,6 +150,16 @@ export type DebugCropResult = {
   meta?: string;
 };
 
+export type DebugTimings = {
+  totalMs: number;
+  loadMs: number;
+  layoutMs: number;
+  nameMs: number;
+  mightMs: number;
+  artifactsMs: number;
+  cropsMs: number;
+};
+
 export type DebugAnalysisResult = {
   fileName: string;
   imageUrl: string;
@@ -148,9 +174,58 @@ export type DebugAnalysisResult = {
   slots: Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
   crops: DebugCropResult[];
   mightDebugLines?: string[];
+  timings?: DebugTimings;
 };
 
 const OCR_LANGUAGE = "eng";
+
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+type OcrWorker = Awaited<ReturnType<typeof Tesseract.createWorker>>;
+
+let ocrWorkerPromise: Promise<OcrWorker> | null = null;
+let ocrQueue: Promise<unknown> = Promise.resolve();
+
+function runOcrTask<T>(task: () => Promise<T>): Promise<T> {
+  const next = ocrQueue.then(task, task);
+  ocrQueue = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
+async function getOcrWorker(): Promise<OcrWorker> {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = Tesseract.createWorker(OCR_LANGUAGE);
+  }
+
+  return await ocrWorkerPromise;
+}
+
+async function disposeOcrWorker(): Promise<void> {
+  await ocrQueue.catch(() => undefined);
+
+  if (!ocrWorkerPromise) {
+    return;
+  }
+
+  const currentWorkerPromise = ocrWorkerPromise;
+  ocrWorkerPromise = null;
+
+  try {
+    const worker = await currentWorkerPromise;
+    await worker.terminate();
+  } catch {
+    // ignora erros de cleanup
+  }
+}
 
 const COLOR_WEIGHTS: Record<ArtifactColor, number> = {
   grey: 0,
@@ -406,110 +481,141 @@ export async function analyzeEnemyImages(
 ): Promise<EnemyAnalysisRow[]> {
   const rows: EnemyAnalysisRow[] = [];
 
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
 
-    try {
-      onProgress?.({
-        current: index + 1,
-        total: files.length,
-        fileName: file.name,
-        step: "Loading screenshot",
-      });
+      try {
+        onProgress?.({
+          current: index + 1,
+          total: files.length,
+          fileName: file.name,
+          step: "Loading screenshot",
+        });
 
-      const rootCanvas = await fileToCanvas(file);
-      const analysisCanvas = buildAnalysisCanvas(rootCanvas);
+        const rootCanvas = await fileToCanvas(file);
+        const analysisCanvas = buildAnalysisCanvas(rootCanvas);
 
-      onProgress?.({
-        current: index + 1,
-        total: files.length,
-        fileName: file.name,
-        step: "Detecting layout",
-      });
+        onProgress?.({
+          current: index + 1,
+          total: files.length,
+          fileName: file.name,
+          step: "Detecting layout",
+        });
 
-      const layout = await detectLayout(analysisCanvas, {
-        allowNameOcrFallback: false,
-      });
+        const layout = await detectLayout(analysisCanvas, {
+          allowNameOcrFallback: false,
+        });
 
-      onProgress?.({
-        current: index + 1,
-        total: files.length,
-        fileName: file.name,
-        step: "Reading chief name",
-      });
+        onProgress?.({
+          current: index + 1,
+          total: files.length,
+          fileName: file.name,
+          step: "Reading chief name",
+        });
 
-      const chiefName = await extractChiefName(
-        analysisCanvas,
-        layout.topInfoRect,
-        layout.nameRect,
-        true
-      );
+        const chiefName = await extractChiefName(
+          analysisCanvas,
+          layout.topInfoRect,
+          layout.nameRect,
+          true
+        );
 
-      onProgress?.({
-        current: index + 1,
-        total: files.length,
-        fileName: file.name,
-        step: "Reading might values",
-      });
+        onProgress?.({
+          current: index + 1,
+          total: files.length,
+          fileName: file.name,
+          step: "Reading might values",
+        });
 
-      const { individualMight, heroMight } = await extractMightPair(
-        analysisCanvas,
-        layout.topInfoRect,
-        "fast"
-      );
+        const { individualMight, heroMight } = await extractMightPair(
+          analysisCanvas,
+          layout.topInfoRect,
+          "fast"
+        );
 
-      onProgress?.({
-        current: index + 1,
-        total: files.length,
-        fileName: file.name,
-        step: "Analyzing artifacts",
-      });
+        onProgress?.({
+          current: index + 1,
+          total: files.length,
+          fileName: file.name,
+          step: "Analyzing artifacts",
+        });
 
-      const slots = analyzeSlots(analysisCanvas, layout);
+        const slots = analyzeSlots(analysisCanvas, layout);
 
-      const armyScores = buildArmyScores(slots);
-      const armyType = decideArmyType(armyScores, slots);
-      const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
+        const armyScores = buildArmyScores(slots);
+        const armyType = decideArmyType(armyScores, slots);
+        const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
 
-      rows.push({
-        fileName: file.name,
-        chiefName,
-        individualMight,
-        heroMight,
-        armyType,
-        confidence,
-        slots,
-        armyScores,
-      });
-    } catch {
-      // ignora screenshots problemáticos e continua
+        rows.push({
+          fileName: file.name,
+          chiefName,
+          individualMight,
+          heroMight,
+          armyType,
+          confidence,
+          slots,
+          armyScores,
+        });
+      } catch {
+        // ignora screenshots problemáticos e continua
+      }
     }
-  }
 
-  return rows;
+    return rows;
+  } finally {
+    await disposeOcrWorker();
+  }
 }
 
 export async function analyzeEnemyImageDebug(
   file: File
 ): Promise<DebugAnalysisResult> {
+  const totalStart = nowMs();
+
+  const loadStart = nowMs();
   const rootCanvas = await fileToCanvas(file);
   const analysisCanvas = buildAnalysisCanvas(rootCanvas);
+  const loadMs = nowMs() - loadStart;
+
+  const layoutStart = nowMs();
   const layout = await detectLayout(analysisCanvas);
+  const layoutMs = nowMs() - layoutStart;
+
+  const nameStart = nowMs();
   const chiefName = await extractChiefName(
     analysisCanvas,
     layout.topInfoRect,
     layout.nameRect
   );
+  const nameMs = nowMs() - nameStart;
 
+  const mightStart = nowMs();
   const mightDebug = await extractMightPairDebug(
     analysisCanvas,
     layout.topInfoRect
   );
+  const mightMs = nowMs() - mightStart;
 
+  const artifactsStart = nowMs();
   const slots = analyzeSlots(analysisCanvas, layout);
   const armyScores = buildArmyScores(slots);
   const armyType = decideArmyType(armyScores, slots);
   const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
+  const artifactsMs = nowMs() - artifactsStart;
+
+  const cropsStart = nowMs();
+  const crops = buildDebugCrops(
+    analysisCanvas,
+    layout,
+    chiefName,
+    mightDebug.individualMight,
+    slots,
+    mightDebug.candidateLines
+  );
+  const cropsMs = nowMs() - cropsStart;
+
+  const totalMs = nowMs() - totalStart;
 
   return {
     fileName: file.name,
@@ -524,14 +630,16 @@ export async function analyzeEnemyImageDebug(
     confidence,
     slots,
     mightDebugLines: mightDebug.candidateLines,
-    crops: buildDebugCrops(
-      analysisCanvas,
-      layout,
-      chiefName,
-      mightDebug.individualMight,
-      slots,
-      mightDebug.candidateLines
-    ),
+    crops,
+    timings: {
+      totalMs,
+      loadMs,
+      layoutMs,
+      nameMs,
+      mightMs,
+      artifactsMs,
+      cropsMs,
+    },
   };
 }
 
@@ -769,18 +877,14 @@ async function findArtifactTitleRect(
     const prepared = upscaleCanvas(buildWhiteTextCanvas(crop), 3);
 
     try {
-      const result = await Tesseract.recognize(prepared, OCR_LANGUAGE, {
-        tessedit_pageseg_mode: "6",
-        tessedit_char_whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ",
-      } as never);
+      const result = await recognizeDetailedWithBoxes(prepared, {
+        whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' ",
+        pageSegMode: "6",
+      });
 
-      const words = (result.data.words ?? []) as Array<{
-        text: string;
-        bbox: { x0: number; y0: number; x1: number; y1: number };
-      }>;
-
-      const titleWord = words.find((word) => isArtifactTitleToken(word.text ?? ""));
+      const titleWord = result.words.find((word) =>
+        isArtifactTitleToken(word.text ?? "")
+      );
 
       if (titleWord) {
         const cropX = region.x * rootWidth;
@@ -1559,7 +1663,7 @@ const NUMBER_READ_STAGES = [
   { label: "full", height: 1.0 },
 ] as const;
 
-type NumberReadMode = "fast" | "full";
+type NumberReadMode = "fast" | "full" | "full_with_psm6";
 
 const FAST_NUMBER_READ_STAGES = [
   { label: "top-72%", height: 0.72 },
@@ -1674,7 +1778,40 @@ function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null
   }
 
   if (bestConsensus) {
-    return bestConsensus[0];
+    const consensusBest = bestConsensus[0];
+    const consensusValue = String(consensusBest.value);
+
+    if (consensusValue.length === 8) {
+      const nineDigitParent = picks
+        .filter((pick) => String(pick.value).length === 9)
+        .filter((pick) => pick.label !== "top-58%")
+        .filter((pick) => {
+          const nine = String(pick.value);
+          return nine.slice(1) === consensusValue || nine.slice(0, 8) === consensusValue;
+        })
+        .sort((left, right) => {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+
+          if (right.hits !== left.hits) {
+            return right.hits - left.hits;
+          }
+
+          return getStageBias(right.label) - getStageBias(left.label);
+        })[0];
+
+      if (nineDigitParent) {
+        const comparableScore = nineDigitParent.score >= consensusBest.score * 0.97;
+        const comparableHits = nineDigitParent.hits >= Math.max(1, consensusBest.hits - 1);
+
+        if (comparableScore && comparableHits) {
+          return nineDigitParent;
+        }
+      }
+    }
+
+    return consensusBest;
   }
 
   let best = picks[0];
@@ -1715,8 +1852,34 @@ async function evaluateNumberStage(
   candidateLines: string[];
 }> {
   const stageCrop = cropTopPortion(crop, stage.height);
-  const candidates = await collectNumericCandidatesFromRow(stageCrop, mode);
-  const groups = scoreNumericCandidateGroups(candidates);
+
+  const primaryMode: NumberReadMode =
+    mode === "full" ? "full" : mode;
+
+  let candidates = await collectNumericCandidatesFromRow(stageCrop, primaryMode);
+  let groups = scoreNumericCandidateGroups(candidates);
+
+  const bestPrimary = groups[0];
+
+  const needsPsm6Rescue =
+    mode === "full" &&
+    (
+      !bestPrimary ||
+      bestPrimary.hits < 3 ||
+      bestPrimary.score < 700
+    );
+
+  if (needsPsm6Rescue) {
+    const rescueCandidates = await collectNumericCandidatesFromRow(
+      stageCrop,
+      "full_with_psm6"
+    );
+    const rescueGroups = scoreNumericCandidateGroups(rescueCandidates);
+
+    if (rescueGroups.length) {
+      groups = rescueGroups;
+    }
+  }
 
   if (!groups.length) {
     return {
@@ -1997,10 +2160,12 @@ async function collectNumericCandidatesFromRow(
     });
   }
 
+  const usePsm6 = mode === "full_with_psm6";
   const candidates: NumericCandidate[] = [];
 
   for (const variant of variants) {
-    const pageSegModes: Array<"6" | "7"> = variant.masked ? ["7", "6"] : ["7"];
+    const pageSegModes: Array<"6" | "7"> =
+      usePsm6 && variant.masked ? ["7", "6"] : ["7"];
 
     for (const pageSegMode of pageSegModes) {
       const prepared = upscaleCanvas(
@@ -4241,23 +4406,77 @@ async function recognizeDetailed(
     pageSegMode?: "6" | "7";
   }
 ): Promise<OCRResultLite> {
-  const result = await Tesseract.recognize(source, OCR_LANGUAGE, {
-    tessedit_pageseg_mode: options?.pageSegMode ?? "7",
-    tessedit_char_whitelist: options?.whitelist ?? "",
-  } as never);
+  return runOcrTask(async () => {
+    const worker = await getOcrWorker();
 
-  const words = ((result.data.words ?? []) as Array<{
-    text?: string;
-    confidence?: number;
-  }>).map((word) => ({
-    text: (word.text ?? "").trim(),
-    confidence: Number.isFinite(word.confidence) ? Number(word.confidence) : 0,
-  }));
+    await worker.setParameters({
+      tessedit_pageseg_mode: options?.pageSegMode ?? "7",
+      tessedit_char_whitelist: options?.whitelist ?? "",
+    } as never);
 
-  return {
-    text: result.data.text ?? "",
-    words,
-  };
+    const result = await worker.recognize(source);
+
+    const words = ((result.data.words ?? []) as Array<{
+      text?: string;
+      confidence?: number;
+    }>).map((word) => ({
+      text: (word.text ?? "").trim(),
+      confidence: Number.isFinite(word.confidence)
+        ? Number(word.confidence)
+        : 0,
+    }));
+
+    return {
+      text: result.data.text ?? "",
+      words,
+    };
+  });
+}
+
+async function recognizeDetailedWithBoxes(
+  source: HTMLCanvasElement,
+  options?: {
+    whitelist?: string;
+    pageSegMode?: "6" | "7";
+  }
+): Promise<OCRResultWithBoxesLite> {
+  return runOcrTask(async () => {
+    const worker = await getOcrWorker();
+
+    await worker.setParameters({
+      tessedit_pageseg_mode: options?.pageSegMode ?? "7",
+      tessedit_char_whitelist: options?.whitelist ?? "",
+    } as never);
+
+    const result = await worker.recognize(source);
+
+    const words = ((result.data.words ?? []) as Array<{
+      text?: string;
+      confidence?: number;
+      bbox?: {
+        x0?: number;
+        y0?: number;
+        x1?: number;
+        y1?: number;
+      };
+    }>).map((word) => ({
+      text: (word.text ?? "").trim(),
+      confidence: Number.isFinite(word.confidence)
+        ? Number(word.confidence)
+        : 0,
+      bbox: {
+        x0: Number.isFinite(word.bbox?.x0) ? Number(word.bbox?.x0) : 0,
+        y0: Number.isFinite(word.bbox?.y0) ? Number(word.bbox?.y0) : 0,
+        x1: Number.isFinite(word.bbox?.x1) ? Number(word.bbox?.x1) : 0,
+        y1: Number.isFinite(word.bbox?.y1) ? Number(word.bbox?.y1) : 0,
+      },
+    }));
+
+    return {
+      text: result.data.text ?? "",
+      words,
+    };
+  });
 }
 
 function rgbToHsv(r: number, g: number, b: number) {

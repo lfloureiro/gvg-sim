@@ -112,6 +112,45 @@ export default function EnemyTribeDebugScreen({
             </div>
           </section>
 
+      {result.timings ? (
+        <section className="top-grid">
+          <div className="info-box">
+            <span className="info-label">Total</span>
+            <strong>{formatMs(result.timings.totalMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Load</span>
+            <strong>{formatMs(result.timings.loadMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Layout</span>
+            <strong>{formatMs(result.timings.layoutMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Name</span>
+            <strong>{formatMs(result.timings.nameMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Might</span>
+            <strong>{formatMs(result.timings.mightMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Artifacts</span>
+            <strong>{formatMs(result.timings.artifactsMs)}</strong>
+          </div>
+
+          <div className="info-box">
+            <span className="info-label">Debug crops</span>
+            <strong>{formatMs(result.timings.cropsMs)}</strong>
+          </div>
+        </section>
+      ) : null}
+
           <div
             style={{
               display: "grid",
@@ -324,6 +363,18 @@ function RectOverlay({
       </div>
     </div>
   );
+}
+
+function formatMs(value?: number) {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "—";
+  }
+
+  if (value < 1000) {
+    return `${value.toFixed(0)} ms`;
+  }
+
+  return `${(value / 1000).toFixed(2)} s`;
 }
 
 function formatNumber(value: number) {
