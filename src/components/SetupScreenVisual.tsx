@@ -4,46 +4,27 @@ import {
   PHOENIX_TITLE,
 } from "../version";
 
-type SetupScreenProps = {
+type SetupScreenVisualProps = {
   t: AppText;
   tribeNames: string[];
-  tribeColors: string[];
   currentScores: number[];
   error: string;
   onTribeNameChange: (index: number, value: string) => void;
-  onTribeColorChange: (index: number, value: string) => void;
   onCurrentScoreChange: (index: number, value: number) => void;
   onContinue: () => void;
-  onBackToModeSelection?: () => void;
+  onBackToModeSelection: () => void;
 };
 
-function getColorOptions(t: AppText) {
-  return [
-    { value: "#ff6b6b", label: t.common.colours.red },
-    { value: "#4dabf7", label: t.common.colours.blue },
-    { value: "#51cf66", label: t.common.colours.green },
-    { value: "#ffd43b", label: t.common.colours.yellow },
-    { value: "#b197fc", label: t.common.colours.purple },
-    { value: "#ffa94d", label: t.common.colours.orange },
-    { value: "#f783ac", label: t.common.colours.pink },
-    { value: "#63e6be", label: t.common.colours.mint },
-  ];
-}
-
-export default function SetupScreen({
+export default function SetupScreenVisual({
   t,
   tribeNames,
-  tribeColors,
   currentScores,
   error,
   onTribeNameChange,
-  onTribeColorChange,
   onCurrentScoreChange,
   onContinue,
   onBackToModeSelection,
-}: SetupScreenProps) {
-  const colorOptions = getColorOptions(t);
-
+}: SetupScreenVisualProps) {
   return (
     <section className="card">
       <div
@@ -61,8 +42,8 @@ export default function SetupScreen({
           className="phoenix-banner-inner"
           style={{ position: "relative", zIndex: 2, maxWidth: "56%" }}
         >
-          <h1 className="phoenix-title">{t.setup.title}</h1>
-          <p className="phoenix-subtitle">{t.setup.subtitle}</p>
+          <h1 className="phoenix-title">{t.setupVisual.title}</h1>
+          <p className="phoenix-subtitle">{t.setupVisual.subtitle}</p>
         </div>
 
         <div
@@ -107,6 +88,12 @@ export default function SetupScreen({
         </div>
       </div>
 
+      <div className="note-box" style={{ marginBottom: "1rem" }}>
+        <strong>{t.setupVisual.nextStepTitle}</strong>
+        <br />
+        {t.setupVisual.nextStepBody}
+      </div>
+
       <h2>{t.setup.initialTribeData}</h2>
 
       <div className="tribe-setup-grid">
@@ -136,22 +123,6 @@ export default function SetupScreen({
               </label>
 
               <label className="field">
-                <span>{t.common.colour}</span>
-                <select
-                  value={tribeColors[index]}
-                  onChange={(event) =>
-                    onTribeColorChange(index, event.target.value)
-                  }
-                >
-                  {colorOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field">
                 <span>{t.common.currentPoints}</span>
                 <input
                   type="number"
@@ -171,14 +142,9 @@ export default function SetupScreen({
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="actions">
-        {onBackToModeSelection ? (
-          <button
-            className="secondary-button"
-            onClick={onBackToModeSelection}
-          >
-            Voltar aos modos
-          </button>
-        ) : null}
+        <button className="secondary-button" onClick={onBackToModeSelection}>
+          {t.setupVisual.backToModes}
+        </button>
 
         <button className="primary-button" onClick={onContinue}>
           {t.common.continue}

@@ -106,6 +106,41 @@ export type AppText = {
     allTribesMustHaveAName: string;
     tribeNamesMustBeUnique: string;
   };
+  modeSelection: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    tableTitle: string;
+    tableDescription: string;
+    visualTitle: string;
+    visualDescription: string;
+  };
+
+  setupVisual: {
+    title: string;
+    subtitle: string;
+    nextStepTitle: string;
+    nextStepBody: string;
+    backToModes: string;
+  };
+
+  simulationVisual: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    calibrationOn: string;
+    calibrationOff: string;
+    nextStepTitle: string;
+    nextStepBodyLine1: string;
+    nextStepBodyLine2: string;
+  };
+
+  mapCalibration: {
+    pointLabel: string;
+    copyCoordinates: string;
+    reset: string;
+    help: string;
+  };
 };
 
 export type TranslationMap = Record<Language, AppText>;

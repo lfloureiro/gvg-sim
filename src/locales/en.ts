@@ -117,6 +117,41 @@ const en: AppText = {
     allTribesMustHaveAName: "All tribes must have a name.",
     tribeNamesMustBeUnique: "Tribe names must be unique.",
   },
+  modeSelection: {
+    eyebrow: "GvG Simulator",
+    title: "Choose mode",
+    subtitle: "Choose whether you want to work in table mode or visual mode.",
+    tableTitle: "Table Mode",
+    tableDescription: "Current flow with list-based setup and table-based simulation.",
+    visualTitle: "Visual Mode",
+    visualDescription: "New flow with map-based position selection and visual simulation.",
+  },
+
+  setupVisual: {
+    title: "Visual Setup",
+    subtitle: "In this mode, colour is not chosen manually. It will be derived from the selected position on the map.",
+    nextStepTitle: "Next step:",
+    nextStepBody: "We will replace this setup with a map-based version where you assign each tribe directly to a home spot.",
+    backToModes: "Back to modes",
+  },
+
+  simulationVisual: {
+    eyebrow: "Visual Mode",
+    title: "Visual Simulation",
+    subtitle: "Base structure ready. Next we will connect the visual setup to the map and then to ruin/pass ownership.",
+    calibrationOn: "Calibration",
+    calibrationOff: "Exit calibration",
+    nextStepTitle: "Next step",
+    nextStepBodyLine1: "We will replace this placeholder with:",
+    nextStepBodyLine2: "1. visual setup with tribe assignment on home spots\n2. visual simulation with ruins, passes and owners in overlay",
+  },
+
+  mapCalibration: {
+    pointLabel: "Point",
+    copyCoordinates: "Copy coordinates",
+    reset: "Reset",
+    help: "Click a point to select it. Use arrow keys to move by 0.2%. Use Shift + arrows to move by 1%.",
+  },
 };
 
 export default en;

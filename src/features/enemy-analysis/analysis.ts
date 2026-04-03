@@ -475,6 +475,26 @@ function isYellowNamePixel(
   );
 }
 
+function shouldRetryChiefNameBatch(name: string) {
+  if (name === "Unknown") {
+    return true;
+  }
+
+  if (/[._-]$/.test(name)) {
+    return true;
+  }
+
+  if (/^[A-Za-z0-9]{1,2}[._-][A-Za-z0-9].{4,}$/u.test(name)) {
+    return true;
+  }
+
+  if (/^[A-Za-z]{1,2}[A-Z][A-Za-z0-9]{5,}$/u.test(name)) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function analyzeEnemyImages(
   files: File[],
   onProgress?: (progress: AnalysisProgress) => void
@@ -520,6 +540,19 @@ export async function analyzeEnemyImages(
           layout.nameRect,
           true
         );
+
+        if (shouldRetryChiefNameBatch(chiefName)) {
+          const retryLayout = await detectLayout(analysisCanvas);
+          const retriedChiefName = await extractChiefName(
+            analysisCanvas,
+            retryLayout.topInfoRect,
+            retryLayout.nameRect
+          );
+
+          if (retriedChiefName !== "Unknown") {
+            chiefName = retriedChiefName;
+          }
+        }
 
         onProgress?.({
           current: index + 1,
@@ -786,7 +819,7 @@ async function findNameRectByOCRFallback(
   for (const variant of variants) {
     const ocr = await recognizeDetailed(variant, {
       whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
       pageSegMode: "7",
     });
 
@@ -1408,7 +1441,26 @@ async function extractChiefName(
       expandPixelRect(rootCanvas, nameRect, 10, 14, 18)
     );
 
-    const crops = fast ? [exactCrop] : [exactCrop, paddedCrop, tallCrop];
+    const leftBias = Math.max(34, Math.floor(nameRect.width * 0.55));
+    const leftBiasedX = Math.max(nameRect.x - leftBias, 0);
+    const leftBiasedY = Math.max(nameRect.y - 10, 0);
+
+    const leftBiasedCrop = cropPixelRect(rootCanvas, {
+      x: leftBiasedX,
+      y: leftBiasedY,
+      width: Math.min(
+        nameRect.width + leftBias + 14,
+        rootCanvas.width - leftBiasedX
+      ),
+      height: Math.min(
+        nameRect.height + 20,
+        rootCanvas.height - leftBiasedY
+      ),
+    });
+
+    const crops = fast
+      ? [exactCrop, leftBiasedCrop]
+      : [exactCrop, paddedCrop, tallCrop, leftBiasedCrop];
 
     for (const crop of crops) {
       const strictPrepared = upscaleCanvas(
@@ -1424,12 +1476,12 @@ async function extractChiefName(
       const [strictOcr, softOcr] = await Promise.all([
         recognizeDetailed(strictPrepared, {
           whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
           pageSegMode: "7",
         }),
         recognizeDetailed(softPrepared, {
           whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
           pageSegMode: "7",
         }),
       ]);
@@ -1460,12 +1512,12 @@ async function extractChiefName(
     const [strictOcr, softOcr] = await Promise.all([
       recognizeDetailed(strictPrepared, {
         whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
         pageSegMode: "7",
       }),
       recognizeDetailed(softPrepared, {
         whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
         pageSegMode: "7",
       }),
     ]);
@@ -1475,6 +1527,87 @@ async function extractChiefName(
   }
 
   return chooseBestChiefName(candidates);
+}
+
+function isLikelyShortNoiseChunk(chunk: string) {
+  return (
+    (
+      /^[A-Za-z0-9]{1,2}$/.test(chunk) ||
+      /^[A-Za-z0-9]{1,2}[._-]$/.test(chunk) ||
+      /^[._-][A-Za-z0-9]{1,2}$/.test(chunk)
+    ) &&
+    chunk.length <= 3
+  );
+}
+
+function buildNameVariants(raw: string) {
+  const first = cleanLeadingNoise(raw);
+  if (first === "Unknown") {
+    return [];
+  }
+
+  const variants = new Set<string>([first]);
+  const queue = [first];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const nextValues: string[] = [];
+
+    const prefixedWithSep = current.match(/^[A-Za-z0-9]{1,2}[._-](.+)$/u);
+    if (prefixedWithSep && /^[A-Za-z\p{L}]/u.test(prefixedWithSep[1])) {
+      nextValues.push(prefixedWithSep[1]);
+    }
+
+    const prefixedCapsDigits = current.match(
+      /^[A-Z0-9]{1,2}([A-Za-z\p{L}][A-Za-z0-9_.@€-]{2,})$/u
+    );
+    if (prefixedCapsDigits) {
+      nextValues.push(prefixedCapsDigits[1]);
+    }
+
+    const suffixedSingle = current.match(/^(.+?[A-Za-z\p{L}])[A-Za-z]$/u);
+    if (suffixedSingle && suffixedSingle[1].length >= 4) {
+      nextValues.push(suffixedSingle[1]);
+    }
+
+    const suffixedWithSep = current.match(
+      /^(.+?)[._-][A-Za-z0-9]{1,2}$/u
+    );
+    if (suffixedWithSep && suffixedWithSep[1].length >= 4) {
+      nextValues.push(suffixedWithSep[1]);
+    }
+
+    for (const candidate of nextValues) {
+      const normalized = cleanLeadingNoise(candidate);
+
+      if (normalized === "Unknown" || variants.has(normalized)) {
+        continue;
+      }
+
+      variants.add(normalized);
+
+      if (normalized.length >= 4) {
+        queue.push(normalized);
+      }
+    }
+  }
+
+  return [...variants];
+}
+
+function pushNameVariants(
+  results: NameCandidate[],
+  raw: string,
+  baseWeight: number
+) {
+  const variants = buildNameVariants(raw);
+
+  for (let index = 0; index < variants.length; index += 1) {
+    results.push({
+      value: variants[index],
+      weight: baseWeight * (index === 0 ? 1 : 0.82),
+    });
+  }
 }
 
 function extractNameCandidatesFromOCR(
@@ -1489,28 +1622,35 @@ function extractNameCandidatesFromOCR(
       confidence: word.confidence,
     }))
     .filter((entry) => entry.value !== "Unknown")
-    .filter((entry) => /[A-Za-z]/.test(entry.value))
+    .filter((entry) => /[\p{L}A-Za-z]/u.test(entry.value))
     .filter((entry) => entry.value.length >= 2);
 
   for (let index = 0; index < wordTokens.length; index += 1) {
     const one = wordTokens[index];
-    results.push({
-      value: one.value,
-      weight: sourceWeight * Math.max(0.4, one.confidence / 100),
-    });
+    pushNameVariants(
+      results,
+      one.value,
+      sourceWeight * Math.max(0.4, one.confidence / 100)
+    );
 
     if (index + 1 < wordTokens.length) {
-      const two = cleanLeadingNoise(`${wordTokens[index].value}${wordTokens[index + 1].value}`);
+      const two = cleanLeadingNoise(
+        `${wordTokens[index].value}${wordTokens[index + 1].value}`
+      );
+
       if (two !== "Unknown") {
-        results.push({
-          value: two,
-          weight:
-            sourceWeight *
+        pushNameVariants(
+          results,
+          two,
+          sourceWeight *
             Math.max(
               0.45,
-              Math.min(wordTokens[index].confidence, wordTokens[index + 1].confidence) / 100
-            ),
-        });
+              Math.min(
+                wordTokens[index].confidence,
+                wordTokens[index + 1].confidence
+              ) / 100
+            )
+        );
       }
     }
   }
@@ -1520,13 +1660,10 @@ function extractNameCandidatesFromOCR(
     .split(/\s+/)
     .map((token) => cleanLeadingNoise(token))
     .filter((token) => token !== "Unknown")
-    .filter((token) => /[A-Za-z]/.test(token));
+    .filter((token) => /[\p{L}A-Za-z]/u.test(token));
 
   for (const token of rawTokens) {
-    results.push({
-      value: token,
-      weight: sourceWeight * 0.75,
-    });
+    pushNameVariants(results, token, sourceWeight * 0.75);
   }
 
   return results;
@@ -1594,18 +1731,42 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
         }
       }
 
+      const otherPrefixNoise =
+        otherLower.endsWith(lower) &&
+        isLikelyShortNoiseChunk(other.slice(0, other.length - value.length));
+
+      const otherSuffixNoise =
+        otherLower.startsWith(lower) &&
+        isLikelyShortNoiseChunk(other.slice(value.length));
+
       if (
         other.length >= value.length + 2 &&
         (otherLower.startsWith(lower) || otherLower.endsWith(lower))
       ) {
-        score -= 24;
+        if (otherPrefixNoise || otherSuffixNoise) {
+          score += 22;
+        } else {
+          score -= 24;
+        }
       }
+
+      const valuePrefixNoise =
+        lower.endsWith(otherLower) &&
+        isLikelyShortNoiseChunk(value.slice(0, value.length - other.length));
+
+      const valueSuffixNoise =
+        lower.startsWith(otherLower) &&
+        isLikelyShortNoiseChunk(value.slice(other.length));
 
       if (
         value.length >= other.length + 2 &&
         (lower.startsWith(otherLower) || lower.endsWith(otherLower))
       ) {
-        score += 16;
+        if (valuePrefixNoise || valueSuffixNoise) {
+          score -= 34;
+        } else {
+          score += 16;
+        }
       }
     }
 
@@ -3798,25 +3959,29 @@ function getConfidenceLabel(
 
 function cleanLeadingNoise(name: string) {
   let cleaned = name
-    .replace(/[★☆•·]/g, " ")
+    .replace(/[★☆•·™△▲◆♦♡♥]/gu, " ")
     .replace(/^\[+/, "")
     .replace(/\]+$/, "")
-    .replace(/^[^A-Za-z0-9]+/, "")
-    .replace(/[^A-Za-z0-9]+$/, "")
     .replace(/\s+/g, "");
 
-  cleaned = cleaned.replace(/^[Il|!]+(?=[A-Za-z])/, "");
-  cleaned = cleaned.replace(/^[^A-Za-z]+(?=[A-Za-z])/, "");
+  cleaned = cleaned
+    .replace(/^[^0-9A-Za-z\p{L}_.@€-]+/gu, "")
+    .replace(/[^0-9A-Za-z\p{L}_.@€-]+$/gu, "")
+    .replace(/^[._-]+/g, "")
+    .replace(/[._-]+$/g, "");
+
+  cleaned = cleaned.replace(/^[Il|!]+(?=[A-Za-z\p{L}])/gu, "");
+  cleaned = cleaned.replace(/^[^A-Za-z\p{L}]+(?=[A-Za-z\p{L}])/gu, "");
 
   if (!cleaned) {
     return "Unknown";
   }
 
-  if (!/[A-Za-z]/.test(cleaned)) {
+  if (!/[\p{L}A-Za-z]/u.test(cleaned)) {
     return "Unknown";
   }
 
-  if (cleaned.length < 3 || cleaned.length > 22) {
+  if (cleaned.length < 3 || cleaned.length > 24) {
     return "Unknown";
   }
 

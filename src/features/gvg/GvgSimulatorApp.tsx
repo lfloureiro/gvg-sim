@@ -3,6 +3,8 @@ import { TRIBE_COUNT } from "../../constants";
 import { getTranslation } from "../../i18n";
 import SetupScreen from "../../components/SetupScreen";
 import SimulationScreen from "../../components/SimulationScreen";
+import SetupScreenVisual from "../../components/SetupScreenVisual";
+import SimulationScreenVisual from "../../components/SimulationScreenVisual";
 import { buildInitialRuinStates } from "../../utils/scoring";
 import type {
   DayNumber,
@@ -11,8 +13,10 @@ import type {
   RuinStateField,
   Tribe,
 } from "../../types";
+import ModeSelectionScreen from "./ModeSelectionScreen";
+import type { SimulatorMode } from "./types";
 
-const STORAGE_KEY = "gvg-sim-state-v4";
+const STORAGE_KEY = "gvg-sim-state-v5";
 
 const DEFAULT_TRIBE_COLORS = [
   "#ff6b6b",
@@ -31,6 +35,7 @@ type SetupErrorKey =
   | "tribeNamesMustBeUnique";
 
 type PersistedState = {
+  mode: SimulatorMode | null;
   configured: boolean;
   tribeNames: string[];
   tribeColors: string[];
@@ -46,6 +51,7 @@ type GvgSimulatorAppProps = {
 
 function createDefaultState(): PersistedState {
   return {
+    mode: null,
     configured: false,
     tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
       index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
@@ -107,8 +113,14 @@ function loadInitialState(): PersistedState {
 
     loadedNames[0] = "Phoenix Veritas";
 
+    const loadedMode: SimulatorMode | null =
+      parsed.mode === "table" || parsed.mode === "visual"
+        ? parsed.mode
+        : null;
+
     return {
-      configured: Boolean(parsed.configured),
+      mode: loadedMode,
+      configured: loadedMode ? Boolean(parsed.configured) : false,
       tribeNames: loadedNames,
       tribeColors:
         Array.isArray(parsed.tribeColors) &&
@@ -170,6 +182,26 @@ export default function GvgSimulatorApp({
       })),
     [state.tribeNames, state.tribeColors, state.currentScores]
   );
+
+  function handleModeSelect(mode: SimulatorMode) {
+    setSetupErrorKey("");
+
+    setState((previous) => ({
+      ...previous,
+      mode,
+      configured: false,
+    }));
+  }
+
+  function handleBackToModeSelection() {
+    setSetupErrorKey("");
+
+    setState((previous) => ({
+      ...previous,
+      mode: null,
+      configured: false,
+    }));
+  }
 
   function handleTribeNameChange(index: number, value: string) {
     if (index === 0) {
@@ -298,6 +330,9 @@ export default function GvgSimulatorApp({
     }));
   }
 
+  const isTableMode = state.mode === "table";
+  const isVisualMode = state.mode === "visual";
+
   return (
     <main className="app-shell">
       <div className="app-container stack">
@@ -309,7 +344,9 @@ export default function GvgSimulatorApp({
           </div>
         ) : null}
 
-        {!state.configured ? (
+        {!state.mode ? (
+          <ModeSelectionScreen t={t} onSelectMode={handleModeSelect} />
+        ) : isTableMode && !state.configured ? (
           <SetupScreen
             t={t}
             tribeNames={state.tribeNames}
@@ -320,9 +357,33 @@ export default function GvgSimulatorApp({
             onTribeColorChange={handleTribeColorChange}
             onCurrentScoreChange={handleCurrentScoreChange}
             onContinue={handleContinue}
+            onBackToModeSelection={handleBackToModeSelection}
+          />
+        ) : isTableMode ? (
+          <SimulationScreen
+            t={t}
+            tribes={tribes}
+            currentDay={state.currentDay}
+            currentUtc={currentUtc}
+            ruinStates={state.ruinStates}
+            onCurrentDayChange={handleCurrentDayChange}
+            onRuinChange={handleRuinChange}
+            onCopyCurrentToScenario={handleCopyCurrentToScenario}
+            onBack={handleBack}
+          />
+        ) : isVisualMode && !state.configured ? (
+          <SetupScreenVisual
+            t={t}
+            tribeNames={state.tribeNames}
+            currentScores={state.currentScores}
+            error={setupErrorKey ? t.errors[setupErrorKey] : ""}
+            onTribeNameChange={handleTribeNameChange}
+            onCurrentScoreChange={handleCurrentScoreChange}
+            onContinue={handleContinue}
+            onBackToModeSelection={handleBackToModeSelection}
           />
         ) : (
-          <SimulationScreen
+          <SimulationScreenVisual
             t={t}
             tribes={tribes}
             currentDay={state.currentDay}
