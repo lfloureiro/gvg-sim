@@ -64,8 +64,10 @@ export const PASS_NODES: PassNode[] = [
   { id: "pass-18", kind: "pass", label: "Pass 18", x: 56.2, y: 18.6 },
   { id: "pass-19", kind: "pass", label: "Pass 19", x: 63.8, y: 39.4 },
   { id: "pass-20", kind: "pass", label: "Pass 20", x: 67.8, y: 57.6 },
-  { id: "pass-21", kind: "pass", label: "Pass 21", x: 45.6, y: 39.8 },
-  { id: "pass-22", kind: "pass", label: "Pass 22", x: 53.8, y: 40.8 },
+  { id: "pass-21", kind: "pass", label: "Pass 21", x: 44.2, y: 46.4 },
+  { id: "pass-22", kind: "pass", label: "Pass 22", x: 57.4, y: 36.2 },
+  { id: "pass-23", kind: "pass", label: "Pass 23", x: 45.6, y: 39.8 },
+  { id: "pass-24", kind: "pass", label: "Pass 24", x: 53.8, y: 40.8 },
 ];
 
 export const RUIN_NODES: RuinNode[] = [
