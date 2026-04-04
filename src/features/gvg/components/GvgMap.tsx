@@ -10,6 +10,7 @@ import {
 
 type GvgMapProps = {
   t: AppText;
+  currentDay: 1 | 2 | 3;
   onHomeClick?: (homeId: string) => void;
   onMainRuinClick?: () => void;
   onPassClick?: (passId: string) => void;
@@ -22,6 +23,10 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function cloneNodes(nodes: MapNode[]): MapNode[] {
+  return nodes.map((node) => ({ ...node }));
+}
+
 function isPassNode(node: MapNode): node is PassNode {
   return node.kind === "pass";
 }
@@ -30,17 +35,25 @@ function isRuinNode(node: MapNode): node is RuinNode {
   return node.kind === "ruin";
 }
 
+function isNodeOpen(node: MapNode, currentDay: 1 | 2 | 3): boolean {
+  if (node.kind === "home") {
+    return true;
+  }
+
+  return currentDay >= node.openDay;
+}
+
 function getNodeSize(node: MapNode): number {
   if (node.kind === "home") {
-    return 36;
+    return 42;
   }
 
   if (node.kind === "pass") {
-    return 28;
+    return 26;
   }
 
   if (node.kind === "ruin" && node.isCentralTemple) {
-    return 24;
+    return 26;
   }
 
   return 30;
@@ -59,6 +72,29 @@ function getNodeOutlineColor(nodeColor: string): string {
   }
 
   return "#111827";
+}
+
+function renderRuinBadgeBase(ringColor: string, isSelected: boolean) {
+  return (
+    <>
+      <circle
+        cx="12"
+        cy="12"
+        r="11"
+        fill="rgba(17,24,39,0.42)"
+        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.22)"}
+        strokeWidth="1.4"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="9.6"
+        fill="rgba(17,24,39,0.18)"
+        stroke={ringColor}
+        strokeWidth="1.8"
+      />
+    </>
+  );
 }
 
 function renderHomeIcon(color: string, isSelected: boolean) {
@@ -159,10 +195,7 @@ function renderValkyrieIcon(
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
       {renderRuinBadgeBase(color, isSelected)}
 
-      <path
-        d="M12 5.2 L13.6 8.2 L12 18.6 L10.4 8.2 Z"
-        fill="#ffffff"
-      />
+      <path d="M12 5.2 L13.6 8.2 L12 18.6 L10.4 8.2 Z" fill="#ffffff" />
       <path
         d="M9.6 9.8 C7.6 8.8 6.1 9.5 4.9 11.5 C6.8 11.3 8.2 11.7 10 13.1"
         fill="none"
@@ -201,32 +234,6 @@ function renderTempleIcon(
   );
 }
 
-function renderRuinBadgeBase(
-  ringColor: string,
-  isSelected: boolean
-) {
-  return (
-    <>
-      <circle
-        cx="12"
-        cy="12"
-        r="11"
-        fill="rgba(17,24,39,0.42)"
-        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.22)"}
-        strokeWidth="1.4"
-      />
-      <circle
-        cx="12"
-        cy="12"
-        r="9.6"
-        fill="rgba(17,24,39,0.18)"
-        stroke={ringColor}
-        strokeWidth="1.8"
-      />
-    </>
-  );
-}
-
 function renderNodeIcon(node: MapNode, color: string, isSelected: boolean) {
   const outlineColor = getNodeOutlineColor(color);
 
@@ -251,6 +258,7 @@ function renderNodeIcon(node: MapNode, color: string, isSelected: boolean) {
 
 export default function GvgMap({
   t,
+  currentDay,
   onHomeClick,
   onMainRuinClick,
   onPassClick,
@@ -258,7 +266,9 @@ export default function GvgMap({
   calibrationMode = false,
   nodeColors,
 }: GvgMapProps) {
-  const [nodes, setNodes] = useState<MapNode[]>(INITIAL_MAP_NODES);
+  const [nodes, setNodes] = useState<MapNode[]>(() =>
+    cloneNodes(INITIAL_MAP_NODES)
+  );
   const [selectedId, setSelectedId] = useState<string>(
     INITIAL_MAP_NODES[0]?.id ?? ""
   );
@@ -332,7 +342,7 @@ export const PASS_NODES: PassNode[] = [
 ${passes
   .map(
     (node) =>
-      `  { id: "${node.id}", kind: "pass", label: "${node.label}", x: ${node.x}, y: ${node.y} },`
+      `  { id: "${node.id}", kind: "pass", label: "${node.label}", passLevel: ${node.passLevel}, openDay: ${node.openDay}, x: ${node.x}, y: ${node.y} },`
   )
   .join("\n")}
 ];
@@ -344,7 +354,7 @@ ${ruins
       ? ", isCentralTemple: true"
       : "";
 
-    return `  { id: "${node.id}", kind: "ruin", label: "${node.label}", ruinType: "${node.ruinType}", x: ${node.x}, y: ${node.y}${centralTemplePart} },`;
+    return `  { id: "${node.id}", kind: "ruin", label: "${node.label}", ruinType: "${node.ruinType}", ruinLevel: ${node.ruinLevel}, openDay: ${node.openDay}, x: ${node.x}, y: ${node.y}${centralTemplePart} },`;
   })
   .join("\n")}
 ];
@@ -354,7 +364,7 @@ ${ruins
   }
 
   function resetCoords() {
-    setNodes(INITIAL_MAP_NODES);
+    setNodes(cloneNodes(INITIAL_MAP_NODES));
     setSelectedId(INITIAL_MAP_NODES[0]?.id ?? "");
   }
 
@@ -423,6 +433,7 @@ ${ruins
             const isSelected = calibrationMode && node.id === selectedId;
             const size = getNodeSize(node);
             const color = getNodeColor(node, nodeColors);
+            const isOpen = isNodeOpen(node, currentDay);
 
             return (
               <button
@@ -437,6 +448,7 @@ ${ruins
                   node.kind === "ruin" && node.isCentralTemple
                     ? "gvg-map__hotspot--central-temple"
                     : "",
+                  isOpen ? "gvg-map__hotspot--open" : "gvg-map__hotspot--locked",
                   isSelected ? "gvg-map__hotspot--selected" : "",
                 ]
                   .filter(Boolean)
@@ -453,15 +465,26 @@ ${ruins
                   padding: 0,
                   border: "none",
                   background: "transparent",
-                  cursor: "pointer",
+                  cursor: calibrationMode || isOpen ? "pointer" : "not-allowed",
+                  opacity: isOpen ? 1 : 0.45,
                   filter: isSelected
                     ? "drop-shadow(0 0 8px rgba(255,255,255,0.95))"
-                    : "drop-shadow(0 1px 3px rgba(0,0,0,0.45))",
+                    : isOpen
+                    ? "drop-shadow(0 1px 3px rgba(0,0,0,0.45))"
+                    : "grayscale(0.35) brightness(0.8)",
                 }}
-                title={`${node.label} (${node.id}) — x: ${node.x}, y: ${node.y}`}
+                title={
+                  node.kind === "home"
+                    ? `${node.label} (${node.id}) — x: ${node.x}, y: ${node.y}`
+                    : `${node.label} (${node.id}) — x: ${node.x}, y: ${node.y} — opens day ${node.openDay}`
+                }
                 onClick={() => {
                   if (calibrationMode) {
                     setSelectedId(node.id);
+                    return;
+                  }
+
+                  if (!isOpen) {
                     return;
                   }
 
@@ -482,7 +505,56 @@ ${ruins
                   }
                 }}
               >
-                {renderNodeIcon(node, color, isSelected)}
+                <>
+                  {renderNodeIcon(node, color, isSelected)}
+
+                  {node.kind !== "home" ? (
+                    <>
+                      <span
+                        style={{
+                          position: "absolute",
+                          bottom: "-10px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: isOpen ? "#ffffff" : "#d1d5db",
+                          textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {node.kind === "pass"
+                          ? `P${node.passLevel}`
+                          : `R${node.ruinLevel}`}
+                      </span>
+
+                      {!isOpen ? (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "-8px",
+                            right: "-8px",
+                            width: "16px",
+                            height: "16px",
+                            borderRadius: "999px",
+                            background: "rgba(17,24,39,0.95)",
+                            border: "1px solid rgba(255,255,255,0.35)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: "10px",
+                            lineHeight: 1,
+                            color: "#ffffff",
+                            pointerEvents: "none",
+                          }}
+                          title={`Opens on day ${node.openDay}`}
+                        >
+                          🔒
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                </>
               </button>
             );
           })}

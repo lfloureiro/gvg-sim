@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AppText } from "../i18n";
 import type {
   DayNumber,
   RuinState,
   RuinStateField,
   Tribe,
+  TribeId,
 } from "../types";
 import GvgMap from "../features/gvg/components/GvgMap";
 
@@ -24,14 +25,39 @@ type SimulationScreenVisualProps = {
   onBack: () => void;
 };
 
+function getNextTribeId(
+  currentValue: string | null,
+  tribes: Tribe[]
+): TribeId | null {
+  if (tribes.length === 0) {
+    return null;
+  }
+
+  if (currentValue === null) {
+    return tribes[0].id;
+  }
+
+  const index = tribes.findIndex((tribe) => tribe.id === currentValue);
+
+  if (index === -1) {
+    return tribes[0].id;
+  }
+
+  if (index === tribes.length - 1) {
+    return null;
+  }
+
+  return tribes[index + 1].id;
+}
+
 export default function SimulationScreenVisual({
   t,
-  tribes: _tribes,
+  tribes,
   currentDay,
   currentUtc,
-  ruinStates: _ruinStates,
+  ruinStates,
   onCurrentDayChange,
-  onRuinChange: _onRuinChange,
+  onRuinChange,
   onCopyCurrentToScenario,
   onBack,
 }: SimulationScreenVisualProps) {
@@ -39,6 +65,56 @@ export default function SimulationScreenVisual({
 
   const utcDate = currentUtc.toISOString().slice(0, 10);
   const utcTime = currentUtc.toISOString().slice(11, 19);
+
+  const tribeColorById = useMemo(() => {
+    return Object.fromEntries(tribes.map((tribe) => [tribe.id, tribe.color]));
+  }, [tribes]);
+
+  const ruinStateById = useMemo(() => {
+    return Object.fromEntries(ruinStates.map((ruin) => [ruin.id, ruin]));
+  }, [ruinStates]);
+
+  const nodeColors = useMemo(() => {
+    const colors: Record<string, string> = {};
+
+    tribes.forEach((tribe, index) => {
+      colors[`home-${index + 1}`] = tribe.color;
+    });
+
+    ruinStates.forEach((ruin) => {
+      const effectiveOwner = ruin.simulatedOwner ?? ruin.currentOwner;
+      if (effectiveOwner) {
+        colors[ruin.id] = tribeColorById[effectiveOwner] ?? "#9ca3af";
+      }
+    });
+
+    return colors;
+  }, [tribes, ruinStates, tribeColorById]);
+
+  function handleHomeClick(_homeId: string) {
+    // Para já não fazemos nada nos homes.
+  }
+
+  function handlePassClick(_passId: string) {
+    // Para já as passes só têm abertura/fecho visual por dia.
+    // O projeto ainda não tem passStates no estado global.
+  }
+
+  function handleRuinClick(ruinId: string) {
+    const ruinState = ruinStateById[ruinId];
+    if (!ruinState) {
+      return;
+    }
+
+    const displayedOwner = ruinState.simulatedOwner ?? ruinState.currentOwner;
+    const nextOwner = getNextTribeId(displayedOwner, tribes);
+
+    onRuinChange(ruinId, "simulatedOwner", nextOwner);
+  }
+
+  function handleMainRuinClick() {
+    handleRuinClick("T1");
+  }
 
   return (
     <div className="stack">
@@ -99,13 +175,13 @@ export default function SimulationScreenVisual({
 
       <GvgMap
         t={t}
+        currentDay={currentDay}
         calibrationMode={calibrationMode}
-        onHomeClick={(homeId: string) => {
-          console.log("visual mode - home clicked:", homeId);
-        }}
-        onMainRuinClick={() => {
-          console.log("visual mode - main ruin clicked");
-        }}
+        nodeColors={nodeColors}
+        onHomeClick={handleHomeClick}
+        onPassClick={handlePassClick}
+        onRuinClick={handleRuinClick}
+        onMainRuinClick={handleMainRuinClick}
       />
 
       <section className="card">
