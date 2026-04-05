@@ -105,9 +105,7 @@ export default function SetupScreenVisual({
             <div
               key={index}
               className="tribe-setup-row"
-              style={{
-                opacity: isEnabled ? 1 : 0.72,
-              }}
+              style={{ opacity: isEnabled ? 1 : 0.72 }}
             >
               <label className="field">
                 <span>

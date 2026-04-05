@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AppText } from "../i18n";
 import type {
   DayNumber,
@@ -8,10 +8,10 @@ import type {
   RuinState,
   RuinStateField,
   Tribe,
-  TribeId,
 } from "../types";
 import GvgMap from "../features/gvg/components/GvgMap";
 import { HOME_NODES } from "../features/gvg/data/mapLayout";
+import { getPointsPerMinuteByOwner } from "../utils/scoring";
 
 type SimulationScreenVisualProps = {
   t: AppText;
@@ -37,19 +37,37 @@ type SimulationScreenVisualProps = {
   onBack: () => void;
 };
 
-function getNextOwnerFromSelected(
-  currentValue: string | null,
-  selectedTribeId: TribeId | null
-): TribeId | null {
-  if (!selectedTribeId) {
-    return currentValue;
-  }
+type MenuTarget =
+  | {
+      kind: "home";
+      id: string;
+      label: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "pass";
+      id: string;
+      label: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "ruin";
+      id: string;
+      label: string;
+      x: number;
+      y: number;
+    };
 
-  if (currentValue === selectedTribeId) {
-    return null;
-  }
+function clampMenuPosition(x: number, y: number) {
+  const width = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const height = typeof window !== "undefined" ? window.innerHeight : 800;
 
-  return selectedTribeId;
+  return {
+    x: Math.min(Math.max(170, x), width - 170),
+    y: Math.min(Math.max(120, y), height - 180),
+  };
 }
 
 export default function SimulationScreenVisual({
@@ -68,32 +86,10 @@ export default function SimulationScreenVisual({
   onBack,
 }: SimulationScreenVisualProps) {
   const [calibrationMode, setCalibrationMode] = useState(false);
-  const [selectedTribeId, setSelectedTribeId] = useState<TribeId | null>(
-    tribes[0]?.id ?? null
-  );
-
-  useEffect(() => {
-    if (selectedTribeId && tribes.some((tribe) => tribe.id === selectedTribeId)) {
-      return;
-    }
-
-    setSelectedTribeId(tribes[0]?.id ?? null);
-  }, [tribes, selectedTribeId]);
+  const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null);
 
   const utcDate = currentUtc.toISOString().slice(0, 10);
   const utcTime = currentUtc.toISOString().slice(11, 19);
-
-  const tribeColorById = useMemo(() => {
-    return Object.fromEntries(tribes.map((tribe) => [tribe.id, tribe.color]));
-  }, [tribes]);
-
-  const passStateById = useMemo(() => {
-    return Object.fromEntries(passStates.map((pass) => [pass.id, pass]));
-  }, [passStates]);
-
-  const ruinStateById = useMemo(() => {
-    return Object.fromEntries(ruinStates.map((ruin) => [ruin.id, ruin]));
-  }, [ruinStates]);
 
   const homeAssignmentById = useMemo(() => {
     return Object.fromEntries(
@@ -117,85 +113,223 @@ export default function SimulationScreenVisual({
     return Object.fromEntries(HOME_NODES.map((home) => [home.id, home.label]));
   }, []);
 
-  const activeHomeId = selectedTribeId
-    ? homeIdByTribeId[selectedTribeId] ?? null
-    : null;
+  const passStateById = useMemo(() => {
+    return Object.fromEntries(passStates.map((pass) => [pass.id, pass]));
+  }, [passStates]);
 
-  const nodeColors = useMemo(() => {
-    const colors: Record<string, string> = {};
+  const ruinStateById = useMemo(() => {
+    return Object.fromEntries(ruinStates.map((ruin) => [ruin.id, ruin]));
+  }, [ruinStates]);
+
+  const effectiveRuinStates = useMemo(
+    () =>
+      ruinStates.map((ruin) => ({
+        ...ruin,
+        simulatedOwner: ruin.simulatedOwner ?? ruin.currentOwner,
+      })),
+    [ruinStates]
+  );
+
+  const ppmByOwner = useMemo(
+    () =>
+      getPointsPerMinuteByOwner(
+        tribes,
+        effectiveRuinStates,
+        currentDay,
+        "simulatedOwner"
+      ),
+    [tribes, effectiveRuinStates, currentDay]
+  );
+
+  const nodeColorSchemes = useMemo(() => {
+    const schemes: Record<string, { primary: string; secondary: string }> = {};
 
     homeAssignments.forEach((assignment) => {
-      if (assignment.tribeId) {
-        colors[assignment.homeId] =
-          tribeColorById[assignment.tribeId] ?? "#9ca3af";
-      }
-    });
-
-    passStates.forEach((pass) => {
-      const effectiveOwner = pass.simulatedOwner ?? pass.currentOwner;
-      if (effectiveOwner) {
-        colors[pass.id] = tribeColorById[effectiveOwner] ?? "#9ca3af";
-      }
-    });
-
-    ruinStates.forEach((ruin) => {
-      const effectiveOwner = ruin.simulatedOwner ?? ruin.currentOwner;
-      if (effectiveOwner) {
-        colors[ruin.id] = tribeColorById[effectiveOwner] ?? "#9ca3af";
-      }
-    });
-
-    return colors;
-  }, [homeAssignments, passStates, ruinStates, tribeColorById]);
-
-  function handleHomeClick(homeId: string) {
-    const currentAssignedTribeId = homeAssignmentById[homeId]?.tribeId ?? null;
-
-    if (selectedTribeId) {
-      if (currentAssignedTribeId === selectedTribeId) {
-        onAssignTribeToHome(homeId, null);
+      if (!assignment.tribeId) {
         return;
       }
 
-      onAssignTribeToHome(homeId, selectedTribeId);
-      return;
-    }
+      const tribe = tribes.find((item) => item.id === assignment.tribeId);
+      if (!tribe) {
+        return;
+      }
 
-    if (currentAssignedTribeId) {
-      setSelectedTribeId(currentAssignedTribeId);
-    }
+      schemes[assignment.homeId] = {
+        primary: tribe.color,
+        secondary: tribe.accentColor,
+      };
+    });
+
+    passStates.forEach((pass) => {
+      const owner = pass.simulatedOwner ?? pass.currentOwner;
+      if (!owner) {
+        return;
+      }
+
+      const tribe = tribes.find((item) => item.id === owner);
+      if (!tribe) {
+        return;
+      }
+
+      schemes[pass.id] = {
+        primary: tribe.color,
+        secondary: tribe.accentColor,
+      };
+    });
+
+    ruinStates.forEach((ruin) => {
+      const owner = ruin.simulatedOwner ?? ruin.currentOwner;
+      if (!owner) {
+        return;
+      }
+
+      const tribe = tribes.find((item) => item.id === owner);
+      if (!tribe) {
+        return;
+      }
+
+      schemes[ruin.id] = {
+        primary: tribe.color,
+        secondary: tribe.accentColor,
+      };
+    });
+
+    return schemes;
+  }, [homeAssignments, passStates, ruinStates, tribes]);
+
+  const firstCaptureRuinIds = useMemo(
+    () =>
+      ruinStates
+        .filter((ruin) => Boolean(ruin.firstCaptureBy))
+        .map((ruin) => ruin.id),
+    [ruinStates]
+  );
+
+  function openMenu(
+    kind: "home" | "pass" | "ruin",
+    id: string,
+    label: string,
+    x: number,
+    y: number
+  ) {
+    const clamped = clampMenuPosition(x, y);
+
+    setMenuTarget({
+      kind,
+      id,
+      label,
+      x: clamped.x,
+      y: clamped.y,
+    });
   }
 
-  function handlePassClick(passId: string) {
-    const passState = passStateById[passId];
-    if (!passState || !selectedTribeId) {
-      return;
-    }
-
-    const displayedOwner = passState.simulatedOwner ?? passState.currentOwner;
-    const nextOwner = getNextOwnerFromSelected(displayedOwner, selectedTribeId);
-
-    onPassChange(passId, "simulatedOwner", nextOwner);
+  function handleHomeClick(homeId: string, anchor: { x: number; y: number }) {
+    openMenu(
+      "home",
+      homeId,
+      homeLabelById[homeId] ?? homeId,
+      anchor.x,
+      anchor.y
+    );
   }
 
-  function handleRuinClick(ruinId: string) {
+  function handlePassClick(passId: string, anchor: { x: number; y: number }) {
+    openMenu("pass", passId, passId.toUpperCase(), anchor.x, anchor.y);
+  }
+
+  function handleRuinClick(ruinId: string, anchor: { x: number; y: number }) {
+    openMenu("ruin", ruinId, ruinId.toUpperCase(), anchor.x, anchor.y);
+  }
+
+  function handleMainRuinClick(anchor: { x: number; y: number }) {
+    openMenu("ruin", "T1", "T1", anchor.x, anchor.y);
+  }
+
+  function handleRuinRightClick(ruinId: string) {
     const ruinState = ruinStateById[ruinId];
-    if (!ruinState || !selectedTribeId) {
+    if (!ruinState) {
       return;
     }
 
-    const displayedOwner = ruinState.simulatedOwner ?? ruinState.currentOwner;
-    const nextOwner = getNextOwnerFromSelected(displayedOwner, selectedTribeId);
+    const effectiveOwner = ruinState.simulatedOwner ?? ruinState.currentOwner;
+    if (!effectiveOwner) {
+      return;
+    }
 
-    onRuinChange(ruinId, "simulatedOwner", nextOwner);
+    onRuinChange(
+      ruinId,
+      "firstCaptureBy",
+      ruinState.firstCaptureBy === effectiveOwner ? null : effectiveOwner
+    );
   }
 
-  function handleMainRuinClick() {
-    handleRuinClick("T1");
+  function getMenuValue(): string {
+    if (!menuTarget) {
+      return "";
+    }
+
+    if (menuTarget.kind === "home") {
+      return homeAssignmentById[menuTarget.id]?.tribeId ?? "";
+    }
+
+    if (menuTarget.kind === "pass") {
+      const passState = passStateById[menuTarget.id];
+      return passState?.simulatedOwner ?? passState?.currentOwner ?? "";
+    }
+
+    const ruinState = ruinStateById[menuTarget.id];
+    return ruinState?.simulatedOwner ?? ruinState?.currentOwner ?? "";
   }
+
+  function applyMenuSelection(value: string) {
+    if (!menuTarget) {
+      return;
+    }
+
+    const nextValue = value || null;
+
+    if (menuTarget.kind === "home") {
+      onAssignTribeToHome(menuTarget.id, nextValue);
+      setMenuTarget(null);
+      return;
+    }
+
+    if (menuTarget.kind === "pass") {
+      onPassChange(menuTarget.id, "simulatedOwner", nextValue);
+      setMenuTarget(null);
+      return;
+    }
+
+    onRuinChange(menuTarget.id, "simulatedOwner", nextValue);
+    setMenuTarget(null);
+  }
+
+  function toggleFirstCaptureFromMenu() {
+    if (!menuTarget || menuTarget.kind !== "ruin") {
+      return;
+    }
+
+    const ruinState = ruinStateById[menuTarget.id];
+    if (!ruinState) {
+      return;
+    }
+
+    const effectiveOwner = ruinState.simulatedOwner ?? ruinState.currentOwner;
+    if (!effectiveOwner) {
+      return;
+    }
+
+    onRuinChange(
+      menuTarget.id,
+      "firstCaptureBy",
+      ruinState.firstCaptureBy === effectiveOwner ? null : effectiveOwner
+    );
+  }
+
+  const highlightedNodeId = menuTarget?.id ?? null;
 
   return (
-    <div className="stack">
+    <div className="stack" style={{ position: "relative" }}>
       <section className="card">
         <div className="card-header">
           <div>
@@ -256,8 +390,8 @@ export default function SimulationScreenVisual({
           <div>
             <h2>Tribos em jogo</h2>
             <p className="phoenix-subtitle" style={{ marginTop: 4 }}>
-              Seleciona uma tribo e depois clica num home para a atribuir. A mesma
-              tribo fica selecionada para pintar passes e ruínas.
+              Clica diretamente num home, pass ou ruína para escolher a tribo no menu.
+              Click direito numa ruína alterna a first capture.
             </p>
           </div>
         </div>
@@ -274,70 +408,82 @@ export default function SimulationScreenVisual({
             const assignedHomeLabel = assignedHomeId
               ? homeLabelById[assignedHomeId] ?? assignedHomeId
               : "Sem home";
-
-            const isSelected = selectedTribeId === tribe.id;
+            const ppm = ppmByOwner.get(tribe.id) ?? 0;
 
             return (
-              <button
+              <div
                 key={tribe.id}
-                type="button"
-                className={isSelected ? "primary-button" : "secondary-button"}
+                className="card"
                 style={{
-                  textAlign: "left",
-                  minHeight: 88,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.9rem",
-                  justifyContent: "flex-start",
+                  padding: "0.9rem 1rem",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.1)",
                 }}
-                onClick={() => setSelectedTribeId(tribe.id)}
               >
-                <span
+                <div
                   style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 999,
-                    background: tribe.color,
-                    border: "2px solid rgba(255,255,255,0.9)",
-                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.8rem",
                   }}
-                />
-                <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <strong>{tribe.name}</strong>
-                  <span style={{ opacity: 0.85, fontSize: "0.92rem" }}>
-                    {assignedHomeLabel}
+                >
+                  <span
+                    style={{
+                      position: "relative",
+                      width: 18,
+                      height: 18,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: 999,
+                        background: tribe.color,
+                        border: "2px solid rgba(255,255,255,0.9)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 4,
+                        borderRadius: 999,
+                        background: tribe.accentColor,
+                        border: "1px solid rgba(255,255,255,0.55)",
+                      }}
+                    />
                   </span>
-                </span>
-              </button>
+
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700 }}>{tribe.name}</div>
+                    <div style={{ opacity: 0.82, fontSize: "0.92rem" }}>
+                      {assignedHomeLabel}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "0.7rem",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "0.5rem",
+                    fontSize: "0.92rem",
+                  }}
+                >
+                  <div>
+                    <div style={{ opacity: 0.72 }}>Score</div>
+                    <strong>{tribe.currentScore.toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <div style={{ opacity: 0.72 }}>PPM</div>
+                    <strong>{ppm.toLocaleString()}</strong>
+                  </div>
+                </div>
+              </div>
             );
           })}
-        </div>
-
-        <div
-          style={{
-            marginTop: "1rem",
-            display: "flex",
-            gap: "0.75rem",
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setSelectedTribeId(null)}
-          >
-            Limpar seleção de tribo
-          </button>
-
-          {activeHomeId ? (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => onAssignTribeToHome(activeHomeId, null)}
-            >
-              Libertar {homeLabelById[activeHomeId] ?? activeHomeId}
-            </button>
-          ) : null}
         </div>
       </section>
 
@@ -345,13 +491,95 @@ export default function SimulationScreenVisual({
         t={t}
         currentDay={currentDay}
         calibrationMode={calibrationMode}
-        activeHomeId={activeHomeId}
-        nodeColors={nodeColors}
+        highlightedNodeId={highlightedNodeId}
+        nodeColorSchemes={nodeColorSchemes}
+        firstCaptureRuinIds={firstCaptureRuinIds}
         onHomeClick={handleHomeClick}
         onPassClick={handlePassClick}
         onRuinClick={handleRuinClick}
         onMainRuinClick={handleMainRuinClick}
+        onRuinRightClick={handleRuinRightClick}
       />
+
+      {menuTarget ? (
+        <div
+          style={{
+            position: "fixed",
+            left: menuTarget.x,
+            top: menuTarget.y,
+            transform: "translate(-50%, 8px)",
+            zIndex: 50,
+            width: 320,
+            maxWidth: "calc(100vw - 24px)",
+            borderRadius: 16,
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(7,18,54,0.96)",
+            boxShadow: "0 18px 40px rgba(0,0,0,0.42)",
+            padding: "0.95rem",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "1rem",
+              alignItems: "start",
+              marginBottom: "0.75rem",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 700 }}>{menuTarget.label}</div>
+              <div style={{ opacity: 0.75, fontSize: "0.92rem" }}>
+                {menuTarget.kind === "home"
+                  ? "Atribuição de home"
+                  : menuTarget.kind === "pass"
+                  ? "Owner da pass"
+                  : "Owner da ruína"}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setMenuTarget(null)}
+            >
+              Fechar
+            </button>
+          </div>
+
+          <label className="field">
+            <span>
+              {menuTarget.kind === "home" ? "Tribo atribuída" : "Owner"}
+            </span>
+            <select
+              value={getMenuValue()}
+              onChange={(event) => applyMenuSelection(event.target.value)}
+            >
+              <option value="">
+                {menuTarget.kind === "home" ? "Sem tribo" : "Neutro"}
+              </option>
+              {tribes.map((tribe) => (
+                <option key={tribe.id} value={tribe.id}>
+                  {tribe.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {menuTarget.kind === "ruin" ? (
+            <div style={{ marginTop: "0.8rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={toggleFirstCaptureFromMenu}
+              >
+                Alternar first capture
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="card">
         <div className="card-header">

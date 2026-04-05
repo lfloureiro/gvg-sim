@@ -8,6 +8,7 @@ export type Tribe = {
   id: TribeId;
   name: string;
   color: string;
+  accentColor: string;
   currentScore: number;
 };
 

@@ -2,19 +2,19 @@ import type { DayNumber, RuinDefinition, RuinType } from "./types";
 
 export const TRIBE_COUNT = 12;
 
-export const DEFAULT_TRIBE_COLORS = [
-  "#e53935", // red
-  "#1e88e5", // blue
-  "#43a047", // green
-  "#fdd835", // yellow
-  "#8e24aa", // purple
-  "#fb8c00", // orange
-  "#d81b60", // pink
-  "#00acc1", // cyan
-  "#7cb342", // lime
-  "#6d4c41", // brown
-  "#3949ab", // indigo
-  "#00897b", // teal
+export const DEFAULT_TRIBE_COLOR_SCHEMES = [
+  { primary: "#e53935", secondary: "#ffb300" }, // red / amber
+  { primary: "#1e88e5", secondary: "#80d8ff" }, // blue / cyan
+  { primary: "#43a047", secondary: "#d4e157" }, // green / lime
+  { primary: "#8e24aa", secondary: "#fdd835" }, // purple / gold
+  { primary: "#00897b", secondary: "#80deea" }, // teal / aqua
+  { primary: "#6d4c41", secondary: "#ffcc80" }, // brown / sand
+  { primary: "#d81b60", secondary: "#f8bbd0" }, // magenta / light pink
+  { primary: "#3949ab", secondary: "#ff8a65" }, // indigo / coral
+  { primary: "#7cb342", secondary: "#fff59d" }, // olive / pale yellow
+  { primary: "#546e7a", secondary: "#ffab91" }, // blue grey / peach
+  { primary: "#5e35b1", secondary: "#a5d6a7" }, // violet / mint
+  { primary: "#00acc1", secondary: "#ce93d8" }, // cyan / lilac
 ];
 
 export const RUIN_DEFINITIONS: RuinDefinition[] = [

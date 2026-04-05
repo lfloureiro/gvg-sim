@@ -8,16 +8,33 @@ import {
   type RuinNode,
 } from "../data/mapLayout";
 
+type NodeAnchor = {
+  x: number;
+  y: number;
+};
+
+type ColorScheme = {
+  primary: string;
+  secondary: string;
+};
+
 type GvgMapProps = {
   t: AppText;
   currentDay: 1 | 2 | 3;
-  activeHomeId?: string | null;
-  onHomeClick?: (homeId: string) => void;
-  onMainRuinClick?: () => void;
-  onPassClick?: (passId: string) => void;
-  onRuinClick?: (ruinId: string) => void;
+  highlightedNodeId?: string | null;
+  onHomeClick?: (homeId: string, anchor: NodeAnchor) => void;
+  onMainRuinClick?: (anchor: NodeAnchor) => void;
+  onPassClick?: (passId: string, anchor: NodeAnchor) => void;
+  onRuinClick?: (ruinId: string, anchor: NodeAnchor) => void;
+  onRuinRightClick?: (ruinId: string) => void;
   calibrationMode?: boolean;
-  nodeColors?: Partial<Record<string, string>>;
+  nodeColorSchemes?: Partial<Record<string, ColorScheme>>;
+  firstCaptureRuinIds?: string[];
+};
+
+const NEUTRAL_SCHEME: ColorScheme = {
+  primary: "#9ca3af",
+  secondary: "#e5e7eb",
 };
 
 function round2(value: number): number {
@@ -46,89 +63,100 @@ function isNodeOpen(node: MapNode, currentDay: 1 | 2 | 3): boolean {
 
 function getNodeSize(node: MapNode): number {
   if (node.kind === "home") {
-    return 44;
+    return 46;
   }
 
   if (node.kind === "pass") {
-    return 28;
+    return 30;
   }
 
   if (node.kind === "ruin" && node.isCentralTemple) {
-    return 28;
+    return 30;
   }
 
-  return 32;
+  return 34;
 }
 
-function getNodeColor(
+function getNodeScheme(
   node: MapNode,
-  nodeColors?: Partial<Record<string, string>>
-): string {
-  return nodeColors?.[node.id] ?? "#9ca3af";
+  nodeColorSchemes?: Partial<Record<string, ColorScheme>>
+): ColorScheme {
+  return nodeColorSchemes?.[node.id] ?? NEUTRAL_SCHEME;
 }
 
-function getNodeOutlineColor(nodeColor: string): string {
-  if (nodeColor === "#9ca3af") {
-    return "#4b5563";
-  }
-
-  return "#111827";
-}
-
-function renderRuinBadgeBase(ringColor: string, isSelected: boolean) {
+function renderRuinBadgeBase(
+  scheme: ColorScheme,
+  isSelected: boolean
+) {
   return (
     <>
       <circle
         cx="12"
         cy="12"
         r="11.2"
-        fill="rgba(17,24,39,0.42)"
-        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.28)"}
-        strokeWidth="1.9"
+        fill="rgba(17,24,39,0.48)"
+        stroke={scheme.primary}
+        strokeWidth="3"
       />
       <circle
         cx="12"
         cy="12"
-        r="9.5"
-        fill="rgba(17,24,39,0.18)"
-        stroke={ringColor}
-        strokeWidth="2.6"
+        r="8.5"
+        fill="rgba(17,24,39,0.2)"
+        stroke={scheme.secondary}
+        strokeWidth="2.5"
       />
+      {isSelected ? (
+        <circle
+          cx="12"
+          cy="12"
+          r="10.1"
+          fill="none"
+          stroke="rgba(255,255,255,0.98)"
+          strokeWidth="1.3"
+        />
+      ) : null}
     </>
   );
 }
 
-function renderHomeIcon(color: string, isSelected: boolean) {
+function renderHomeIcon(scheme: ColorScheme, isSelected: boolean) {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
       <circle
         cx="12"
         cy="12"
-        r="11.1"
+        r="11"
         fill="transparent"
-        stroke={color}
-        strokeWidth="3.1"
+        stroke={scheme.primary}
+        strokeWidth="3.4"
       />
       <circle
         cx="12"
         cy="12"
-        r="8.8"
+        r="8.5"
         fill="transparent"
-        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.92)"}
-        strokeWidth="2.2"
+        stroke={scheme.secondary}
+        strokeWidth="3"
       />
+      {isSelected ? (
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          fill="none"
+          stroke="rgba(255,255,255,0.98)"
+          strokeWidth="1.4"
+        />
+      ) : null}
     </svg>
   );
 }
 
-function renderPassIcon(
-  color: string,
-  _outlineColor: string,
-  isSelected: boolean
-) {
+function renderPassIcon(scheme: ColorScheme, isSelected: boolean) {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
-      {renderRuinBadgeBase(color, isSelected)}
+      {renderRuinBadgeBase(scheme, isSelected)}
 
       <path
         d="M4.8 9 L12 5 L19.2 9"
@@ -161,14 +189,10 @@ function renderPassIcon(
   );
 }
 
-function renderBastionIcon(
-  color: string,
-  _outlineColor: string,
-  isSelected: boolean
-) {
+function renderBastionIcon(scheme: ColorScheme, isSelected: boolean) {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
-      {renderRuinBadgeBase(color, isSelected)}
+      {renderRuinBadgeBase(scheme, isSelected)}
 
       <path
         d="M7.2 7 H16.8 V9.2 L15.6 10.2 V14.8 C15.6 17 14 18.7 12 19.2 C10 18.7 8.4 17 8.4 14.8 V10.2 L7.2 9.2 Z"
@@ -187,14 +211,10 @@ function renderBastionIcon(
   );
 }
 
-function renderValkyrieIcon(
-  color: string,
-  _outlineColor: string,
-  isSelected: boolean
-) {
+function renderValkyrieIcon(scheme: ColorScheme, isSelected: boolean) {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
-      {renderRuinBadgeBase(color, isSelected)}
+      {renderRuinBadgeBase(scheme, isSelected)}
 
       <path d="M12 5.2 L13.6 8.2 L12 18.6 L10.4 8.2 Z" fill="#ffffff" />
       <path
@@ -217,14 +237,10 @@ function renderValkyrieIcon(
   );
 }
 
-function renderTempleIcon(
-  color: string,
-  _outlineColor: string,
-  isSelected: boolean
-) {
+function renderTempleIcon(scheme: ColorScheme, isSelected: boolean) {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
-      {renderRuinBadgeBase(color, isSelected)}
+      {renderRuinBadgeBase(scheme, isSelected)}
 
       <path
         d="M12 5.4 L13.8 9.2 L18 9.8 L14.9 12.8 L15.6 17 L12 15.1 L8.4 17 L9.1 12.8 L6 9.8 L10.2 9.2 Z"
@@ -235,38 +251,47 @@ function renderTempleIcon(
   );
 }
 
-function renderNodeIcon(node: MapNode, color: string, isSelected: boolean) {
-  const outlineColor = getNodeOutlineColor(color);
-
+function renderNodeIcon(node: MapNode, scheme: ColorScheme, isSelected: boolean) {
   if (node.kind === "home") {
-    return renderHomeIcon(color, isSelected);
+    return renderHomeIcon(scheme, isSelected);
   }
 
   if (node.kind === "pass") {
-    return renderPassIcon(color, outlineColor, isSelected);
+    return renderPassIcon(scheme, isSelected);
   }
 
   if (node.ruinType === "bastion") {
-    return renderBastionIcon(color, outlineColor, isSelected);
+    return renderBastionIcon(scheme, isSelected);
   }
 
   if (node.ruinType === "valkyrie") {
-    return renderValkyrieIcon(color, outlineColor, isSelected);
+    return renderValkyrieIcon(scheme, isSelected);
   }
 
-  return renderTempleIcon(color, outlineColor, isSelected);
+  return renderTempleIcon(scheme, isSelected);
+}
+
+function getAnchorFromButton(button: HTMLButtonElement): NodeAnchor {
+  const rect = button.getBoundingClientRect();
+
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.bottom + 6,
+  };
 }
 
 export default function GvgMap({
   t,
   currentDay,
-  activeHomeId = null,
+  highlightedNodeId = null,
   onHomeClick,
   onMainRuinClick,
   onPassClick,
   onRuinClick,
+  onRuinRightClick,
   calibrationMode = false,
-  nodeColors,
+  nodeColorSchemes,
+  firstCaptureRuinIds = [],
 }: GvgMapProps) {
   const [nodes, setNodes] = useState<MapNode[]>(() =>
     cloneNodes(INITIAL_MAP_NODES)
@@ -281,6 +306,11 @@ export default function GvgMap({
       INITIAL_MAP_NODES[0] ??
       null,
     [nodes, selectedId]
+  );
+
+  const firstCaptureSet = useMemo(
+    () => new Set(firstCaptureRuinIds),
+    [firstCaptureRuinIds]
   );
 
   function moveSelected(dx: number, dy: number) {
@@ -434,15 +464,15 @@ ${ruins
           {nodes.map((node) => {
             const isCalibrationSelected =
               calibrationMode && node.id === selectedId;
-            const isActiveHome =
-              !calibrationMode &&
-              node.kind === "home" &&
-              node.id === activeHomeId;
-            const isHighlighted = isCalibrationSelected || isActiveHome;
+            const isHighlighted =
+              !calibrationMode && highlightedNodeId === node.id;
+            const shouldGlow = isCalibrationSelected || isHighlighted;
 
             const size = getNodeSize(node);
-            const color = getNodeColor(node, nodeColors);
+            const scheme = getNodeScheme(node, nodeColorSchemes);
             const isOpen = isNodeOpen(node, currentDay);
+            const hasFirstCapture =
+              node.kind === "ruin" && firstCaptureSet.has(node.id);
 
             return (
               <button
@@ -458,7 +488,7 @@ ${ruins
                     ? "gvg-map__hotspot--central-temple"
                     : "",
                   isOpen ? "gvg-map__hotspot--open" : "gvg-map__hotspot--locked",
-                  isHighlighted ? "gvg-map__hotspot--selected" : "",
+                  shouldGlow ? "gvg-map__hotspot--selected" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -476,7 +506,7 @@ ${ruins
                   background: "transparent",
                   cursor: calibrationMode || isOpen ? "pointer" : "not-allowed",
                   opacity: isOpen ? 1 : 0.45,
-                  filter: isHighlighted
+                  filter: shouldGlow
                     ? "drop-shadow(0 0 9px rgba(255,255,255,0.98))"
                     : isOpen
                     ? "drop-shadow(0 1px 3px rgba(0,0,0,0.45))"
@@ -487,7 +517,7 @@ ${ruins
                     ? `${node.label} (${node.id}) — x: ${node.x}, y: ${node.y}`
                     : `${node.label} (${node.id}) — x: ${node.x}, y: ${node.y} — opens day ${node.openDay}`
                 }
-                onClick={() => {
+                onClick={(event) => {
                   if (calibrationMode) {
                     setSelectedId(node.id);
                     return;
@@ -497,25 +527,37 @@ ${ruins
                     return;
                   }
 
+                  const anchor = getAnchorFromButton(
+                    event.currentTarget as HTMLButtonElement
+                  );
+
                   if (node.kind === "home") {
-                    onHomeClick?.(node.id);
+                    onHomeClick?.(node.id, anchor);
                     return;
                   }
 
                   if (node.kind === "pass") {
-                    onPassClick?.(node.id);
+                    onPassClick?.(node.id, anchor);
                     return;
                   }
 
-                  onRuinClick?.(node.id);
+                  onRuinClick?.(node.id, anchor);
 
                   if (node.isCentralTemple) {
-                    onMainRuinClick?.();
+                    onMainRuinClick?.(anchor);
                   }
+                }}
+                onContextMenu={(event) => {
+                  if (calibrationMode || node.kind !== "ruin" || !isOpen) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  onRuinRightClick?.(node.id);
                 }}
               >
                 <>
-                  {renderNodeIcon(node, color, isHighlighted)}
+                  {renderNodeIcon(node, scheme, shouldGlow)}
 
                   {node.kind !== "home" ? (
                     <>
@@ -559,6 +601,31 @@ ${ruins
                           title={`Opens on day ${node.openDay}`}
                         >
                           🔒
+                        </span>
+                      ) : null}
+
+                      {hasFirstCapture ? (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "-8px",
+                            left: "-8px",
+                            width: "16px",
+                            height: "16px",
+                            borderRadius: "999px",
+                            background: "rgba(120,72,0,0.95)",
+                            border: "1px solid rgba(255,215,64,0.9)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: "10px",
+                            lineHeight: 1,
+                            color: "#ffd54f",
+                            pointerEvents: "none",
+                            boxShadow: "0 0 8px rgba(255,215,64,0.6)",
+                          }}
+                          title="First capture"
+                        >
+                          ★
                         </span>
                       ) : null}
                     </>
