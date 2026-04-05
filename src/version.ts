@@ -6,8 +6,8 @@
 
 export const APP_VERSION = {
   major: 3,
-  minor: 0,
-  patch: 2,
+  minor: 1,
+  patch: 0,
 } as const;
 
 export const APP_VERSION_STRING = `${APP_VERSION.major}.${APP_VERSION.minor}.${APP_VERSION.patch}`;

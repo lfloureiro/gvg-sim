@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { TRIBE_COUNT } from "../../constants";
+import { DEFAULT_TRIBE_COLORS, TRIBE_COUNT } from "../../constants";
 import { getTranslation } from "../../i18n";
 import SetupScreen from "../../components/SetupScreen";
 import SimulationScreen from "../../components/SimulationScreen";
@@ -8,39 +8,30 @@ import SimulationScreenVisual from "../../components/SimulationScreenVisual";
 import { buildInitialRuinStates } from "../../utils/scoring";
 import type {
   DayNumber,
+  HomeAssignment,
   Language,
+  PassState,
+  PassStateField,
   RuinState,
   RuinStateField,
   Tribe,
 } from "../../types";
 import ModeSelectionScreen from "./ModeSelectionScreen";
 import type { SimulatorMode } from "./types";
+import { HOME_NODES, PASS_NODES } from "./data/mapLayout";
 
-const STORAGE_KEY = "gvg-sim-state-v5";
-
-const DEFAULT_TRIBE_COLORS = [
-  "#ff6b6b",
-  "#4dabf7",
-  "#51cf66",
-  "#ffd43b",
-  "#b197fc",
-  "#ffa94d",
-  "#f783ac",
-  "#63e6be",
-];
-
-type SetupErrorKey =
-  | ""
-  | "allTribesMustHaveAName"
-  | "tribeNamesMustBeUnique";
+const STORAGE_KEY = "gvg-sim-state-v8";
 
 type PersistedState = {
   mode: SimulatorMode | null;
   configured: boolean;
   tribeNames: string[];
+  tribeEnabled: boolean[];
   tribeColors: string[];
   currentScores: number[];
   currentDay: DayNumber;
+  homeAssignments: HomeAssignment[];
+  passStates: PassState[];
   ruinStates: RuinState[];
 };
 
@@ -49,25 +40,135 @@ type GvgSimulatorAppProps = {
   onReturnHome?: () => void;
 };
 
-function createDefaultState(): PersistedState {
-  return {
-    mode: null,
-    configured: false,
-    tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
-      index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
-    ),
-    tribeColors: Array.from(
-      { length: TRIBE_COUNT },
-      (_, index) => DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length]
-    ),
-    currentScores: Array.from({ length: TRIBE_COUNT }, () => 0),
-    currentDay: 1,
-    ruinStates: buildInitialRuinStates(),
-  };
+function buildInitialPassStates(): PassState[] {
+  return PASS_NODES.map((passNode) => ({
+    id: passNode.id,
+    currentOwner: null,
+    simulatedOwner: null,
+  }));
 }
 
-function normalizeRuinStates(input: unknown): RuinState[] {
+function buildInitialHomeAssignments(
+  tribeEnabled: boolean[] = Array.from({ length: TRIBE_COUNT }, (_, index) => index < 8)
+): HomeAssignment[] {
+  const activeTribeIds = tribeEnabled
+    .map((enabled, index) => (enabled ? `tribe-${index + 1}` : null))
+    .filter((value): value is string => value !== null);
+
+  return HOME_NODES.map((homeNode, index) => ({
+    homeId: homeNode.id,
+    tribeId: activeTribeIds[index] ?? null,
+  }));
+}
+
+function getEnabledTribeIds(tribeEnabled: boolean[]): Set<string> {
+  return new Set(
+    tribeEnabled
+      .map((enabled, index) => (enabled ? `tribe-${index + 1}` : null))
+      .filter((value): value is string => value !== null)
+  );
+}
+
+function normalizeHomeAssignments(
+  input: unknown,
+  tribeEnabled: boolean[]
+): HomeAssignment[] {
+  const defaults = buildInitialHomeAssignments(tribeEnabled);
+
+  if (!Array.isArray(input)) {
+    return defaults;
+  }
+
+  const allowedTribeIds = getEnabledTribeIds(tribeEnabled);
+  const rawMap = new Map<string, string | null>();
+
+  input.forEach((item) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+
+    const maybeHomeId =
+      "homeId" in item && typeof item.homeId === "string" ? item.homeId : null;
+    const maybeTribeId =
+      "tribeId" in item &&
+      (typeof item.tribeId === "string" || item.tribeId === null)
+        ? item.tribeId
+        : null;
+
+    if (maybeHomeId) {
+      rawMap.set(maybeHomeId, maybeTribeId);
+    }
+  });
+
+  const usedTribes = new Set<string>();
+
+  return defaults.map((defaultItem) => {
+    const savedTribeId = rawMap.get(defaultItem.homeId);
+
+    if (
+      savedTribeId &&
+      allowedTribeIds.has(savedTribeId) &&
+      !usedTribes.has(savedTribeId)
+    ) {
+      usedTribes.add(savedTribeId);
+      return {
+        homeId: defaultItem.homeId,
+        tribeId: savedTribeId,
+      };
+    }
+
+    return {
+      homeId: defaultItem.homeId,
+      tribeId: null,
+    };
+  });
+}
+
+function normalizePassStates(
+  input: unknown,
+  tribeEnabled: boolean[]
+): PassState[] {
+  const defaults = buildInitialPassStates();
+  const allowedTribeIds = getEnabledTribeIds(tribeEnabled);
+
+  if (!Array.isArray(input)) {
+    return defaults;
+  }
+
+  const inputMap = new Map(
+    input
+      .filter(
+        (item): item is PassState =>
+          !!item && typeof item === "object" && "id" in item
+      )
+      .map((item) => [item.id, item])
+  );
+
+  return defaults.map((defaultState) => {
+    const saved = inputMap.get(defaultState.id);
+    const currentOwner =
+      saved?.currentOwner && allowedTribeIds.has(saved.currentOwner)
+        ? saved.currentOwner
+        : null;
+    const simulatedOwner =
+      saved?.simulatedOwner && allowedTribeIds.has(saved.simulatedOwner)
+        ? saved.simulatedOwner
+        : null;
+
+    return {
+      id: defaultState.id,
+      currentOwner,
+      simulatedOwner,
+    };
+  });
+}
+
+function normalizeRuinStates(
+  input: unknown,
+  tribeEnabled: boolean[]
+): RuinState[] {
   const defaults = buildInitialRuinStates();
+  const allowedTribeIds = getEnabledTribeIds(tribeEnabled);
 
   if (!Array.isArray(input)) {
     return defaults;
@@ -87,11 +188,42 @@ function normalizeRuinStates(input: unknown): RuinState[] {
 
     return {
       id: defaultState.id,
-      firstCaptureBy: saved?.firstCaptureBy ?? null,
-      currentOwner: saved?.currentOwner ?? null,
-      simulatedOwner: saved?.simulatedOwner ?? null,
+      firstCaptureBy:
+        saved?.firstCaptureBy && allowedTribeIds.has(saved.firstCaptureBy)
+          ? saved.firstCaptureBy
+          : null,
+      currentOwner:
+        saved?.currentOwner && allowedTribeIds.has(saved.currentOwner)
+          ? saved.currentOwner
+          : null,
+      simulatedOwner:
+        saved?.simulatedOwner && allowedTribeIds.has(saved.simulatedOwner)
+          ? saved.simulatedOwner
+          : null,
     };
   });
+}
+
+function createDefaultState(): PersistedState {
+  const tribeEnabled = Array.from({ length: TRIBE_COUNT }, (_, index) => index < 8);
+
+  return {
+    mode: null,
+    configured: false,
+    tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
+      index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
+    ),
+    tribeEnabled,
+    tribeColors: Array.from(
+      { length: TRIBE_COUNT },
+      (_, index) => DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length]
+    ),
+    currentScores: Array.from({ length: TRIBE_COUNT }, () => 0),
+    currentDay: 1,
+    homeAssignments: buildInitialHomeAssignments(tribeEnabled),
+    passStates: buildInitialPassStates(),
+    ruinStates: buildInitialRuinStates(),
+  };
 }
 
 function loadInitialState(): PersistedState {
@@ -105,28 +237,36 @@ function loadInitialState(): PersistedState {
 
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
 
-    const loadedNames =
+    const tribeNames =
       Array.isArray(parsed.tribeNames) &&
       parsed.tribeNames.length === TRIBE_COUNT
         ? parsed.tribeNames.map((value) => String(value || ""))
         : defaults.tribeNames;
 
-    loadedNames[0] = "Phoenix Veritas";
+    const tribeEnabled =
+      Array.isArray(parsed.tribeEnabled) &&
+      parsed.tribeEnabled.length === TRIBE_COUNT
+        ? parsed.tribeEnabled.map(Boolean)
+        : defaults.tribeEnabled;
 
-    const loadedMode: SimulatorMode | null =
-      parsed.mode === "table" || parsed.mode === "visual"
-        ? parsed.mode
-        : null;
+    const tribeColors =
+      Array.isArray(parsed.tribeColors) &&
+      parsed.tribeColors.length === TRIBE_COUNT
+        ? parsed.tribeColors.map((value) => String(value || "#ffffff"))
+        : defaults.tribeColors;
 
     return {
-      mode: loadedMode,
-      configured: loadedMode ? Boolean(parsed.configured) : false,
-      tribeNames: loadedNames,
-      tribeColors:
-        Array.isArray(parsed.tribeColors) &&
-        parsed.tribeColors.length === TRIBE_COUNT
-          ? parsed.tribeColors.map((value) => String(value || "#ffffff"))
-          : defaults.tribeColors,
+      mode:
+        parsed.mode === "table" || parsed.mode === "visual"
+          ? parsed.mode
+          : null,
+      configured:
+        parsed.mode === "table" || parsed.mode === "visual"
+          ? Boolean(parsed.configured)
+          : false,
+      tribeNames,
+      tribeEnabled,
+      tribeColors,
       currentScores:
         Array.isArray(parsed.currentScores) &&
         parsed.currentScores.length === TRIBE_COUNT
@@ -138,11 +278,49 @@ function loadInitialState(): PersistedState {
         parsed.currentDay === 3
           ? parsed.currentDay
           : 1,
-      ruinStates: normalizeRuinStates(parsed.ruinStates),
+      homeAssignments: normalizeHomeAssignments(parsed.homeAssignments, tribeEnabled),
+      passStates: normalizePassStates(parsed.passStates, tribeEnabled),
+      ruinStates: normalizeRuinStates(parsed.ruinStates, tribeEnabled),
     };
   } catch {
     return defaults;
   }
+}
+
+function clearDisabledTribeFromState(
+  state: PersistedState,
+  disabledTribeId: string
+): PersistedState {
+  return {
+    ...state,
+    homeAssignments: state.homeAssignments.map((assignment) =>
+      assignment.tribeId === disabledTribeId
+        ? { ...assignment, tribeId: null }
+        : assignment
+    ),
+    passStates: state.passStates.map((passState) => ({
+      ...passState,
+      currentOwner:
+        passState.currentOwner === disabledTribeId ? null : passState.currentOwner,
+      simulatedOwner:
+        passState.simulatedOwner === disabledTribeId
+          ? null
+          : passState.simulatedOwner,
+    })),
+    ruinStates: state.ruinStates.map((ruinState) => ({
+      ...ruinState,
+      firstCaptureBy:
+        ruinState.firstCaptureBy === disabledTribeId
+          ? null
+          : ruinState.firstCaptureBy,
+      currentOwner:
+        ruinState.currentOwner === disabledTribeId ? null : ruinState.currentOwner,
+      simulatedOwner:
+        ruinState.simulatedOwner === disabledTribeId
+          ? null
+          : ruinState.simulatedOwner,
+    })),
+  };
 }
 
 export default function GvgSimulatorApp({
@@ -150,7 +328,7 @@ export default function GvgSimulatorApp({
   onReturnHome,
 }: GvgSimulatorAppProps) {
   const [state, setState] = useState<PersistedState>(loadInitialState);
-  const [setupErrorKey, setSetupErrorKey] = useState<SetupErrorKey>("");
+  const [setupError, setSetupError] = useState("");
   const [currentUtc, setCurrentUtc] = useState(new Date());
 
   const t = useMemo(() => getTranslation(language), [language]);
@@ -169,22 +347,23 @@ export default function GvgSimulatorApp({
 
   const tribes = useMemo<Tribe[]>(
     () =>
-      state.tribeNames.map((name, index) => ({
-        id: `tribe-${index + 1}`,
-        name:
-          index === 0
-            ? "Phoenix Veritas"
-            : name.trim() || `Tribo ${index + 1}`,
-        color:
-          state.tribeColors[index] ??
-          DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length],
-        currentScore: state.currentScores[index] ?? 0,
-      })),
-    [state.tribeNames, state.tribeColors, state.currentScores]
+      state.tribeNames
+        .map((name, index) => ({
+          id: `tribe-${index + 1}`,
+          name: name.trim() || `Tribo ${index + 1}`,
+          color:
+            state.tribeColors[index] ??
+            DEFAULT_TRIBE_COLORS[index % DEFAULT_TRIBE_COLORS.length],
+          currentScore: state.currentScores[index] ?? 0,
+          enabled: state.tribeEnabled[index] ?? false,
+        }))
+        .filter((tribe) => tribe.enabled)
+        .map(({ enabled: _enabled, ...tribe }) => tribe),
+    [state.tribeNames, state.tribeColors, state.currentScores, state.tribeEnabled]
   );
 
   function handleModeSelect(mode: SimulatorMode) {
-    setSetupErrorKey("");
+    setSetupError("");
 
     setState((previous) => ({
       ...previous,
@@ -194,7 +373,7 @@ export default function GvgSimulatorApp({
   }
 
   function handleBackToModeSelection() {
-    setSetupErrorKey("");
+    setSetupError("");
 
     setState((previous) => ({
       ...previous,
@@ -204,10 +383,6 @@ export default function GvgSimulatorApp({
   }
 
   function handleTribeNameChange(index: number, value: string) {
-    if (index === 0) {
-      return;
-    }
-
     setState((previous) => {
       const nextNames = [...previous.tribeNames];
       nextNames[index] = value;
@@ -219,15 +394,26 @@ export default function GvgSimulatorApp({
     });
   }
 
-  function handleTribeColorChange(index: number, value: string) {
-    setState((previous) => {
-      const nextColors = [...previous.tribeColors];
-      nextColors[index] = value;
+  function handleTribeEnabledChange(index: number, value: boolean) {
+    setSetupError("");
 
-      return {
+    setState((previous) => {
+      const nextEnabled = [...previous.tribeEnabled];
+      nextEnabled[index] = value;
+
+      let nextState: PersistedState = {
         ...previous,
-        tribeColors: nextColors,
+        tribeEnabled: nextEnabled,
       };
+
+      if (!value) {
+        nextState = clearDisabledTribeFromState(
+          nextState,
+          `tribe-${index + 1}`
+        );
+      }
+
+      return nextState;
     });
   }
 
@@ -247,6 +433,62 @@ export default function GvgSimulatorApp({
     setState((previous) => ({
       ...previous,
       currentDay: day,
+    }));
+  }
+
+  function handleAssignTribeToHome(homeId: string, tribeId: string | null) {
+    setState((previous) => ({
+      ...previous,
+      homeAssignments: previous.homeAssignments.map((assignment) => {
+        if (assignment.homeId === homeId) {
+          return {
+            ...assignment,
+            tribeId,
+          };
+        }
+
+        if (tribeId && assignment.tribeId === tribeId) {
+          return {
+            ...assignment,
+            tribeId: null,
+          };
+        }
+
+        return assignment;
+      }),
+    }));
+  }
+
+  function handlePassChange(
+    passId: string,
+    field: PassStateField,
+    value: string | null
+  ) {
+    setState((previous) => ({
+      ...previous,
+      passStates: previous.passStates.map((passState) => {
+        if (passState.id !== passId) {
+          return passState;
+        }
+
+        if (field === "currentOwner") {
+          const previousCurrentOwner = passState.currentOwner;
+          const shouldSyncSimulation =
+            passState.simulatedOwner === null ||
+            passState.simulatedOwner === previousCurrentOwner;
+
+          return {
+            ...passState,
+            currentOwner: value,
+            simulatedOwner: shouldSyncSimulation ? value : passState.simulatedOwner,
+          };
+        }
+
+        return {
+          ...passState,
+          [field]: value,
+        };
+      }),
     }));
   }
 
@@ -271,9 +513,7 @@ export default function GvgSimulatorApp({
           return {
             ...ruinState,
             currentOwner: value,
-            simulatedOwner: shouldSyncSimulation
-              ? value
-              : ruinState.simulatedOwner,
+            simulatedOwner: shouldSyncSimulation ? value : ruinState.simulatedOwner,
           };
         }
 
@@ -288,6 +528,10 @@ export default function GvgSimulatorApp({
   function handleCopyCurrentToScenario() {
     setState((previous) => ({
       ...previous,
+      passStates: previous.passStates.map((passState) => ({
+        ...passState,
+        simulatedOwner: passState.currentOwner,
+      })),
       ruinStates: previous.ruinStates.map((ruinState) => ({
         ...ruinState,
         simulatedOwner: ruinState.currentOwner,
@@ -296,22 +540,31 @@ export default function GvgSimulatorApp({
   }
 
   function handleContinue() {
-    const cleanedNames = state.tribeNames.map((name, index) =>
-      index === 0 ? "Phoenix Veritas" : name.trim()
-    );
+    const enabledIndexes = state.tribeEnabled
+      .map((enabled, index) => (enabled ? index : -1))
+      .filter((index) => index >= 0);
 
-    if (cleanedNames.some((name) => !name)) {
-      setSetupErrorKey("allTribesMustHaveAName");
+    if (enabledIndexes.length < 2) {
+      setSetupError("Ativa pelo menos duas tribos.");
       return;
     }
 
-    const lowered = cleanedNames.map((name) => name.toLocaleLowerCase());
+    const cleanedNames = state.tribeNames.map((name) => name.trim());
+
+    const activeNames = enabledIndexes.map((index) => cleanedNames[index]);
+
+    if (activeNames.some((name) => !name)) {
+      setSetupError("Todas as tribos ativas têm de ter nome.");
+      return;
+    }
+
+    const lowered = activeNames.map((name) => name.toLocaleLowerCase());
     if (new Set(lowered).size !== lowered.length) {
-      setSetupErrorKey("tribeNamesMustBeUnique");
+      setSetupError("Os nomes das tribos ativas têm de ser únicos.");
       return;
     }
 
-    setSetupErrorKey("");
+    setSetupError("");
 
     setState((previous) => ({
       ...previous,
@@ -350,11 +603,11 @@ export default function GvgSimulatorApp({
           <SetupScreen
             t={t}
             tribeNames={state.tribeNames}
-            tribeColors={state.tribeColors}
+            tribeEnabled={state.tribeEnabled}
             currentScores={state.currentScores}
-            error={setupErrorKey ? t.errors[setupErrorKey] : ""}
+            error={setupError}
             onTribeNameChange={handleTribeNameChange}
-            onTribeColorChange={handleTribeColorChange}
+            onTribeEnabledChange={handleTribeEnabledChange}
             onCurrentScoreChange={handleCurrentScoreChange}
             onContinue={handleContinue}
             onBackToModeSelection={handleBackToModeSelection}
@@ -375,9 +628,11 @@ export default function GvgSimulatorApp({
           <SetupScreenVisual
             t={t}
             tribeNames={state.tribeNames}
+            tribeEnabled={state.tribeEnabled}
             currentScores={state.currentScores}
-            error={setupErrorKey ? t.errors[setupErrorKey] : ""}
+            error={setupError}
             onTribeNameChange={handleTribeNameChange}
+            onTribeEnabledChange={handleTribeEnabledChange}
             onCurrentScoreChange={handleCurrentScoreChange}
             onContinue={handleContinue}
             onBackToModeSelection={handleBackToModeSelection}
@@ -388,8 +643,12 @@ export default function GvgSimulatorApp({
             tribes={tribes}
             currentDay={state.currentDay}
             currentUtc={currentUtc}
+            homeAssignments={state.homeAssignments}
+            passStates={state.passStates}
             ruinStates={state.ruinStates}
             onCurrentDayChange={handleCurrentDayChange}
+            onAssignTribeToHome={handleAssignTribeToHome}
+            onPassChange={handlePassChange}
             onRuinChange={handleRuinChange}
             onCopyCurrentToScenario={handleCopyCurrentToScenario}
             onBack={handleBack}

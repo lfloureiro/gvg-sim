@@ -17,6 +17,19 @@ export type RuinDefinition = {
   type: RuinType;
 };
 
+export type HomeAssignment = {
+  homeId: string;
+  tribeId: NullableTribeId;
+};
+
+export type PassState = {
+  id: string;
+  currentOwner: NullableTribeId;
+  simulatedOwner: NullableTribeId;
+};
+
+export type PassStateField = "currentOwner" | "simulatedOwner";
+
 export type RuinState = {
   id: string;
   firstCaptureBy: NullableTribeId;

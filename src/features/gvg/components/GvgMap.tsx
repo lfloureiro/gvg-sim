@@ -11,6 +11,7 @@ import {
 type GvgMapProps = {
   t: AppText;
   currentDay: 1 | 2 | 3;
+  activeHomeId?: string | null;
   onHomeClick?: (homeId: string) => void;
   onMainRuinClick?: () => void;
   onPassClick?: (passId: string) => void;
@@ -45,18 +46,18 @@ function isNodeOpen(node: MapNode, currentDay: 1 | 2 | 3): boolean {
 
 function getNodeSize(node: MapNode): number {
   if (node.kind === "home") {
-    return 42;
+    return 44;
   }
 
   if (node.kind === "pass") {
-    return 26;
+    return 28;
   }
 
   if (node.kind === "ruin" && node.isCentralTemple) {
-    return 26;
+    return 28;
   }
 
-  return 30;
+  return 32;
 }
 
 function getNodeColor(
@@ -80,18 +81,18 @@ function renderRuinBadgeBase(ringColor: string, isSelected: boolean) {
       <circle
         cx="12"
         cy="12"
-        r="11"
+        r="11.2"
         fill="rgba(17,24,39,0.42)"
-        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.22)"}
-        strokeWidth="1.4"
+        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.28)"}
+        strokeWidth="1.9"
       />
       <circle
         cx="12"
         cy="12"
-        r="9.6"
+        r="9.5"
         fill="rgba(17,24,39,0.18)"
         stroke={ringColor}
-        strokeWidth="1.8"
+        strokeWidth="2.6"
       />
     </>
   );
@@ -103,18 +104,18 @@ function renderHomeIcon(color: string, isSelected: boolean) {
       <circle
         cx="12"
         cy="12"
-        r="11"
+        r="11.1"
         fill="transparent"
         stroke={color}
-        strokeWidth="2.2"
+        strokeWidth="3.1"
       />
       <circle
         cx="12"
         cy="12"
-        r="9"
+        r="8.8"
         fill="transparent"
-        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.88)"}
-        strokeWidth="1.8"
+        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.92)"}
+        strokeWidth="2.2"
       />
     </svg>
   );
@@ -133,7 +134,7 @@ function renderPassIcon(
         d="M4.8 9 L12 5 L19.2 9"
         fill="none"
         stroke="#ffffff"
-        strokeWidth="1.9"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -141,19 +142,19 @@ function renderPassIcon(
         d="M6.4 9.2 H17.6 V17.2 H6.4 Z"
         fill="none"
         stroke="#ffffff"
-        strokeWidth="1.8"
+        strokeWidth="1.95"
         strokeLinejoin="round"
       />
       <path
         d="M9 10.2 V17 M12 10.2 V17 M15 10.2 V17"
         stroke="#ffffff"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
         strokeLinecap="round"
       />
       <path
         d="M4.6 17.4 H19.4"
         stroke="#ffffff"
-        strokeWidth="1.8"
+        strokeWidth="1.95"
         strokeLinecap="round"
       />
     </svg>
@@ -173,13 +174,13 @@ function renderBastionIcon(
         d="M7.2 7 H16.8 V9.2 L15.6 10.2 V14.8 C15.6 17 14 18.7 12 19.2 C10 18.7 8.4 17 8.4 14.8 V10.2 L7.2 9.2 Z"
         fill="none"
         stroke="#ffffff"
-        strokeWidth="1.8"
+        strokeWidth="2"
         strokeLinejoin="round"
       />
       <path
         d="M9.2 7 V8.7 M12 7 V8.7 M14.8 7 V8.7"
         stroke="#ffffff"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
         strokeLinecap="round"
       />
     </svg>
@@ -200,7 +201,7 @@ function renderValkyrieIcon(
         d="M9.6 9.8 C7.6 8.8 6.1 9.5 4.9 11.5 C6.8 11.3 8.2 11.7 10 13.1"
         fill="none"
         stroke="#ffffff"
-        strokeWidth="1.8"
+        strokeWidth="1.9"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -208,7 +209,7 @@ function renderValkyrieIcon(
         d="M14.4 9.8 C16.4 8.8 17.9 9.5 19.1 11.5 C17.2 11.3 15.8 11.7 14 13.1"
         fill="none"
         stroke="#ffffff"
-        strokeWidth="1.8"
+        strokeWidth="1.9"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -259,6 +260,7 @@ function renderNodeIcon(node: MapNode, color: string, isSelected: boolean) {
 export default function GvgMap({
   t,
   currentDay,
+  activeHomeId = null,
   onHomeClick,
   onMainRuinClick,
   onPassClick,
@@ -430,7 +432,14 @@ ${ruins
 
         <div className="gvg-map__overlay">
           {nodes.map((node) => {
-            const isSelected = calibrationMode && node.id === selectedId;
+            const isCalibrationSelected =
+              calibrationMode && node.id === selectedId;
+            const isActiveHome =
+              !calibrationMode &&
+              node.kind === "home" &&
+              node.id === activeHomeId;
+            const isHighlighted = isCalibrationSelected || isActiveHome;
+
             const size = getNodeSize(node);
             const color = getNodeColor(node, nodeColors);
             const isOpen = isNodeOpen(node, currentDay);
@@ -449,7 +458,7 @@ ${ruins
                     ? "gvg-map__hotspot--central-temple"
                     : "",
                   isOpen ? "gvg-map__hotspot--open" : "gvg-map__hotspot--locked",
-                  isSelected ? "gvg-map__hotspot--selected" : "",
+                  isHighlighted ? "gvg-map__hotspot--selected" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -467,8 +476,8 @@ ${ruins
                   background: "transparent",
                   cursor: calibrationMode || isOpen ? "pointer" : "not-allowed",
                   opacity: isOpen ? 1 : 0.45,
-                  filter: isSelected
-                    ? "drop-shadow(0 0 8px rgba(255,255,255,0.95))"
+                  filter: isHighlighted
+                    ? "drop-shadow(0 0 9px rgba(255,255,255,0.98))"
                     : isOpen
                     ? "drop-shadow(0 1px 3px rgba(0,0,0,0.45))"
                     : "grayscale(0.35) brightness(0.8)",
@@ -506,7 +515,7 @@ ${ruins
                 }}
               >
                 <>
-                  {renderNodeIcon(node, color, isSelected)}
+                  {renderNodeIcon(node, color, isHighlighted)}
 
                   {node.kind !== "home" ? (
                     <>

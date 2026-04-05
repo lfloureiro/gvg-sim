@@ -1,15 +1,14 @@
 import type { AppText } from "../i18n";
-import {
-  PHOENIX_MOTTO,
-  PHOENIX_TITLE,
-} from "../version";
+import { PHOENIX_MOTTO, PHOENIX_TITLE } from "../version";
 
 type SetupScreenVisualProps = {
   t: AppText;
   tribeNames: string[];
+  tribeEnabled: boolean[];
   currentScores: number[];
   error: string;
   onTribeNameChange: (index: number, value: string) => void;
+  onTribeEnabledChange: (index: number, value: boolean) => void;
   onCurrentScoreChange: (index: number, value: number) => void;
   onContinue: () => void;
   onBackToModeSelection: () => void;
@@ -18,9 +17,11 @@ type SetupScreenVisualProps = {
 export default function SetupScreenVisual({
   t,
   tribeNames,
+  tribeEnabled,
   currentScores,
   error,
   onTribeNameChange,
+  onTribeEnabledChange,
   onCurrentScoreChange,
   onContinue,
   onBackToModeSelection,
@@ -98,14 +99,15 @@ export default function SetupScreenVisual({
 
       <div className="tribe-setup-grid">
         {tribeNames.map((name, index) => {
-          const isPhoenix = index === 0;
+          const isEnabled = tribeEnabled[index];
 
           return (
             <div
               key={index}
-              className={`tribe-setup-row ${
-                isPhoenix ? "featured-tribe-block" : ""
-              }`}
+              className="tribe-setup-row"
+              style={{
+                opacity: isEnabled ? 1 : 0.72,
+              }}
             >
               <label className="field">
                 <span>
@@ -113,12 +115,23 @@ export default function SetupScreenVisual({
                 </span>
                 <input
                   type="text"
-                  value={isPhoenix ? "Phoenix Veritas" : name}
-                  disabled={isPhoenix}
+                  value={name}
                   onChange={(event) =>
                     onTribeNameChange(index, event.target.value)
                   }
                   placeholder={`${t.common.tribe} ${index + 1}`}
+                />
+              </label>
+
+              <label className="field">
+                <span>Em jogo</span>
+                <input
+                  type="checkbox"
+                  checked={isEnabled}
+                  onChange={(event) =>
+                    onTribeEnabledChange(index, event.target.checked)
+                  }
+                  style={{ width: 20, height: 20 }}
                 />
               </label>
 
@@ -129,6 +142,7 @@ export default function SetupScreenVisual({
                   min={0}
                   step={1}
                   value={currentScores[index]}
+                  disabled={!isEnabled}
                   onChange={(event) =>
                     onCurrentScoreChange(index, Number(event.target.value) || 0)
                   }

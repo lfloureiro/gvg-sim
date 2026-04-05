@@ -15,10 +15,10 @@ export type PassNode = {
   id: string;
   kind: "pass";
   label: string;
-  x: number;
-  y: number;
   passLevel: PassLevel;
   openDay: 1 | 2 | 3;
+  x: number;
+  y: number;
 };
 
 export type RuinNode = {

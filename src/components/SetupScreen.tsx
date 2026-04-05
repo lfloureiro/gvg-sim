@@ -1,49 +1,31 @@
 import type { AppText } from "../i18n";
-import {
-  PHOENIX_MOTTO,
-  PHOENIX_TITLE,
-} from "../version";
+import { PHOENIX_MOTTO, PHOENIX_TITLE } from "../version";
 
 type SetupScreenProps = {
   t: AppText;
   tribeNames: string[];
-  tribeColors: string[];
+  tribeEnabled: boolean[];
   currentScores: number[];
   error: string;
   onTribeNameChange: (index: number, value: string) => void;
-  onTribeColorChange: (index: number, value: string) => void;
+  onTribeEnabledChange: (index: number, value: boolean) => void;
   onCurrentScoreChange: (index: number, value: number) => void;
   onContinue: () => void;
   onBackToModeSelection?: () => void;
 };
 
-function getColorOptions(t: AppText) {
-  return [
-    { value: "#ff6b6b", label: t.common.colours.red },
-    { value: "#4dabf7", label: t.common.colours.blue },
-    { value: "#51cf66", label: t.common.colours.green },
-    { value: "#ffd43b", label: t.common.colours.yellow },
-    { value: "#b197fc", label: t.common.colours.purple },
-    { value: "#ffa94d", label: t.common.colours.orange },
-    { value: "#f783ac", label: t.common.colours.pink },
-    { value: "#63e6be", label: t.common.colours.mint },
-  ];
-}
-
 export default function SetupScreen({
   t,
   tribeNames,
-  tribeColors,
+  tribeEnabled,
   currentScores,
   error,
   onTribeNameChange,
-  onTribeColorChange,
+  onTribeEnabledChange,
   onCurrentScoreChange,
   onContinue,
   onBackToModeSelection,
 }: SetupScreenProps) {
-  const colorOptions = getColorOptions(t);
-
   return (
     <section className="card">
       <div
@@ -111,14 +93,15 @@ export default function SetupScreen({
 
       <div className="tribe-setup-grid">
         {tribeNames.map((name, index) => {
-          const isPhoenix = index === 0;
+          const isEnabled = tribeEnabled[index];
 
           return (
             <div
               key={index}
-              className={`tribe-setup-row ${
-                isPhoenix ? "featured-tribe-block" : ""
-              }`}
+              className="tribe-setup-row"
+              style={{
+                opacity: isEnabled ? 1 : 0.72,
+              }}
             >
               <label className="field">
                 <span>
@@ -126,8 +109,7 @@ export default function SetupScreen({
                 </span>
                 <input
                   type="text"
-                  value={isPhoenix ? "Phoenix Veritas" : name}
-                  disabled={isPhoenix}
+                  value={name}
                   onChange={(event) =>
                     onTribeNameChange(index, event.target.value)
                   }
@@ -136,19 +118,15 @@ export default function SetupScreen({
               </label>
 
               <label className="field">
-                <span>{t.common.colour}</span>
-                <select
-                  value={tribeColors[index]}
+                <span>Em jogo</span>
+                <input
+                  type="checkbox"
+                  checked={isEnabled}
                   onChange={(event) =>
-                    onTribeColorChange(index, event.target.value)
+                    onTribeEnabledChange(index, event.target.checked)
                   }
-                >
-                  {colorOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  style={{ width: 20, height: 20 }}
+                />
               </label>
 
               <label className="field">
@@ -158,6 +136,7 @@ export default function SetupScreen({
                   min={0}
                   step={1}
                   value={currentScores[index]}
+                  disabled={!isEnabled}
                   onChange={(event) =>
                     onCurrentScoreChange(index, Number(event.target.value) || 0)
                   }
