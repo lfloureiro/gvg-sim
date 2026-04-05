@@ -6,30 +6,32 @@ import {
 import { getTranslation } from "../../i18n";
 import SetupScreen from "../../components/SetupScreen";
 import SimulationScreen from "../../components/SimulationScreen";
-import SetupScreenVisual from "../../components/SetupScreenVisual";
 import SimulationScreenVisual from "../../components/SimulationScreenVisual";
 import { buildInitialRuinStates } from "../../utils/scoring";
 import type {
   DayNumber,
   HomeAssignment,
   Language,
+  OrderId,
   PassState,
   PassStateField,
   RuinState,
   RuinStateField,
   Tribe,
+  TribeSlot,
 } from "../../types";
 import ModeSelectionScreen from "./ModeSelectionScreen";
 import type { SimulatorMode } from "./types";
 import { HOME_NODES, PASS_NODES } from "./data/mapLayout";
 
-const STORAGE_KEY = "gvg-sim-state-v9";
+const STORAGE_KEY = "gvg-sim-state-v12";
 
 type PersistedState = {
   mode: SimulatorMode | null;
   configured: boolean;
   tribeNames: string[];
   tribeEnabled: boolean[];
+  tribeOrders: (OrderId | null)[];
   currentScores: number[];
   currentDay: DayNumber;
   homeAssignments: HomeAssignment[];
@@ -50,10 +52,19 @@ function buildInitialPassStates(): PassState[] {
   }));
 }
 
-function buildInitialHomeAssignments(): HomeAssignment[] {
-  return HOME_NODES.map((homeNode) => ({
+function buildInitialHomeAssignments(
+  tribeEnabled: boolean[] = Array.from(
+    { length: TRIBE_COUNT },
+    (_, index) => index < 8
+  )
+): HomeAssignment[] {
+  const activeTribeIds = tribeEnabled
+    .map((enabled, index) => (enabled ? `tribe-${index + 1}` : null))
+    .filter((value): value is string => value !== null);
+
+  return HOME_NODES.map((homeNode, index) => ({
     homeId: homeNode.id,
-    tribeId: null,
+    tribeId: activeTribeIds[index] ?? null,
   }));
 }
 
@@ -69,7 +80,7 @@ function normalizeHomeAssignments(
   input: unknown,
   tribeEnabled: boolean[]
 ): HomeAssignment[] {
-  const defaults = buildInitialHomeAssignments();
+  const defaults = buildInitialHomeAssignments(tribeEnabled);
   const allowedTribeIds = getEnabledTribeIds(tribeEnabled);
 
   if (!Array.isArray(input)) {
@@ -199,16 +210,22 @@ function normalizeRuinStates(
 }
 
 function createDefaultState(): PersistedState {
+  const tribeEnabled = Array.from(
+    { length: TRIBE_COUNT },
+    (_, index) => index < 8
+  );
+
   return {
     mode: null,
     configured: false,
     tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
       index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
     ),
-    tribeEnabled: Array.from({ length: TRIBE_COUNT }, (_, index) => index < 8),
+    tribeEnabled,
+    tribeOrders: Array.from({ length: TRIBE_COUNT }, () => null),
     currentScores: Array.from({ length: TRIBE_COUNT }, () => 0),
     currentDay: 1,
-    homeAssignments: buildInitialHomeAssignments(),
+    homeAssignments: buildInitialHomeAssignments(tribeEnabled),
     passStates: buildInitialPassStates(),
     ruinStates: buildInitialRuinStates(),
   };
@@ -231,6 +248,14 @@ function loadInitialState(): PersistedState {
         ? parsed.tribeEnabled.map(Boolean)
         : defaults.tribeEnabled;
 
+    const tribeOrders =
+      Array.isArray(parsed.tribeOrders) &&
+      parsed.tribeOrders.length === TRIBE_COUNT
+        ? parsed.tribeOrders.map((value) =>
+            value === "order-a" || value === "order-b" ? value : null
+          )
+        : defaults.tribeOrders;
+
     return {
       mode:
         parsed.mode === "table" || parsed.mode === "visual"
@@ -246,6 +271,7 @@ function loadInitialState(): PersistedState {
           ? parsed.tribeNames.map((value) => String(value || ""))
           : defaults.tribeNames,
       tribeEnabled,
+      tribeOrders,
       currentScores:
         Array.isArray(parsed.currentScores) &&
         parsed.currentScores.length === TRIBE_COUNT
@@ -257,7 +283,10 @@ function loadInitialState(): PersistedState {
         parsed.currentDay === 3
           ? parsed.currentDay
           : 1,
-      homeAssignments: normalizeHomeAssignments(parsed.homeAssignments, tribeEnabled),
+      homeAssignments: normalizeHomeAssignments(
+        parsed.homeAssignments,
+        tribeEnabled
+      ),
       passStates: normalizePassStates(parsed.passStates, tribeEnabled),
       ruinStates: normalizeRuinStates(parsed.ruinStates, tribeEnabled),
     };
@@ -268,10 +297,15 @@ function loadInitialState(): PersistedState {
 
 function clearDisabledTribeFromState(
   state: PersistedState,
-  disabledTribeId: string
+  disabledTribeId: string,
+  disabledSlotIndex: number
 ): PersistedState {
+  const nextOrders = [...state.tribeOrders];
+  nextOrders[disabledSlotIndex] = null;
+
   return {
     ...state,
+    tribeOrders: nextOrders,
     homeAssignments: state.homeAssignments.map((assignment) =>
       assignment.tribeId === disabledTribeId
         ? { ...assignment, tribeId: null }
@@ -280,7 +314,9 @@ function clearDisabledTribeFromState(
     passStates: state.passStates.map((passState) => ({
       ...passState,
       currentOwner:
-        passState.currentOwner === disabledTribeId ? null : passState.currentOwner,
+        passState.currentOwner === disabledTribeId
+          ? null
+          : passState.currentOwner,
       simulatedOwner:
         passState.simulatedOwner === disabledTribeId
           ? null
@@ -293,7 +329,9 @@ function clearDisabledTribeFromState(
           ? null
           : ruinState.firstCaptureBy,
       currentOwner:
-        ruinState.currentOwner === disabledTribeId ? null : ruinState.currentOwner,
+        ruinState.currentOwner === disabledTribeId
+          ? null
+          : ruinState.currentOwner,
       simulatedOwner:
         ruinState.simulatedOwner === disabledTribeId
           ? null
@@ -324,24 +362,31 @@ export default function GvgSimulatorApp({
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
-  const tribes = useMemo<Tribe[]>(
+  const tribeSlots = useMemo<TribeSlot[]>(
     () =>
-      state.tribeNames
-        .map((name, index) => ({
-          id: `tribe-${index + 1}`,
-          name: name.trim() || `Tribo ${index + 1}`,
-          color:
-            DEFAULT_TRIBE_COLOR_SCHEMES[index % DEFAULT_TRIBE_COLOR_SCHEMES.length]
-              .primary,
-          accentColor:
-            DEFAULT_TRIBE_COLOR_SCHEMES[index % DEFAULT_TRIBE_COLOR_SCHEMES.length]
-              .secondary,
-          currentScore: state.currentScores[index] ?? 0,
-          enabled: state.tribeEnabled[index] ?? false,
-        }))
-        .filter((tribe) => tribe.enabled)
-        .map(({ enabled: _enabled, ...tribe }) => tribe),
-    [state.tribeNames, state.currentScores, state.tribeEnabled]
+      Array.from({ length: TRIBE_COUNT }, (_, index) => ({
+        id: `tribe-${index + 1}`,
+        slotIndex: index,
+        name: state.tribeNames[index]?.trim() || `Tribo ${index + 1}`,
+        color:
+          DEFAULT_TRIBE_COLOR_SCHEMES[index % DEFAULT_TRIBE_COLOR_SCHEMES.length]
+            .primary,
+        accentColor:
+          DEFAULT_TRIBE_COLOR_SCHEMES[index % DEFAULT_TRIBE_COLOR_SCHEMES.length]
+            .secondary,
+        currentScore: state.currentScores[index] ?? 0,
+        enabled: state.tribeEnabled[index] ?? false,
+        orderId: state.tribeOrders[index] ?? null,
+      })),
+    [state.tribeNames, state.currentScores, state.tribeEnabled, state.tribeOrders]
+  );
+
+  const activeTribes = useMemo<Tribe[]>(
+    () =>
+      tribeSlots
+        .filter((slot) => slot.enabled)
+        .map(({ slotIndex: _slotIndex, enabled: _enabled, ...tribe }) => tribe),
+    [tribeSlots]
   );
 
   function handleModeSelect(mode: SimulatorMode) {
@@ -389,11 +434,24 @@ export default function GvgSimulatorApp({
       if (!value) {
         nextState = clearDisabledTribeFromState(
           nextState,
-          `tribe-${index + 1}`
+          `tribe-${index + 1}`,
+          index
         );
       }
 
       return nextState;
+    });
+  }
+
+  function handleTribeOrderChange(index: number, value: OrderId | null) {
+    setState((previous) => {
+      const nextOrders = [...previous.tribeOrders];
+      nextOrders[index] = value;
+
+      return {
+        ...previous,
+        tribeOrders: nextOrders,
+      };
     });
   }
 
@@ -460,7 +518,9 @@ export default function GvgSimulatorApp({
           return {
             ...passState,
             currentOwner: value,
-            simulatedOwner: shouldSyncSimulation ? value : passState.simulatedOwner,
+            simulatedOwner: shouldSyncSimulation
+              ? value
+              : passState.simulatedOwner,
           };
         }
 
@@ -493,7 +553,9 @@ export default function GvgSimulatorApp({
           return {
             ...ruinState,
             currentOwner: value,
-            simulatedOwner: shouldSyncSimulation ? value : ruinState.simulatedOwner,
+            simulatedOwner: shouldSyncSimulation
+              ? value
+              : ruinState.simulatedOwner,
           };
         }
 
@@ -505,7 +567,15 @@ export default function GvgSimulatorApp({
     }));
   }
 
-  function handleCopyCurrentToScenario() {
+  function handleSwitchMode(mode: SimulatorMode) {
+    setState((previous) => ({
+      ...previous,
+      mode,
+      configured: true,
+    }));
+  }
+
+  function handleResetSimulation() {
     setState((previous) => ({
       ...previous,
       passStates: previous.passStates.map((passState) => ({
@@ -555,13 +625,6 @@ export default function GvgSimulatorApp({
     }));
   }
 
-  function handleBack() {
-    setState((previous) => ({
-      ...previous,
-      configured: false,
-    }));
-  }
-
   const isTableMode = state.mode === "table";
   const isVisualMode = state.mode === "visual";
 
@@ -594,45 +657,36 @@ export default function GvgSimulatorApp({
         ) : isTableMode ? (
           <SimulationScreen
             t={t}
-            tribes={tribes}
+            tribes={activeTribes}
             currentDay={state.currentDay}
             currentUtc={currentUtc}
             ruinStates={state.ruinStates}
             onCurrentDayChange={handleCurrentDayChange}
             onRuinChange={handleRuinChange}
-            onCopyCurrentToScenario={handleCopyCurrentToScenario}
-            onBack={handleBack}
+            onResetSimulation={handleResetSimulation}
+            onSwitchToVisualMode={() => handleSwitchMode("visual")}
           />
-        ) : isVisualMode && !state.configured ? (
-          <SetupScreenVisual
-            t={t}
-            tribeNames={state.tribeNames}
-            tribeEnabled={state.tribeEnabled}
-            currentScores={state.currentScores}
-            error={setupError}
-            onTribeNameChange={handleTribeNameChange}
-            onTribeEnabledChange={handleTribeEnabledChange}
-            onCurrentScoreChange={handleCurrentScoreChange}
-            onContinue={handleContinue}
-            onBackToModeSelection={handleBackToModeSelection}
-          />
-        ) : (
+        ) : isVisualMode ? (
           <SimulationScreenVisual
             t={t}
-            tribes={tribes}
+            tribeSlots={tribeSlots}
             currentDay={state.currentDay}
             currentUtc={currentUtc}
             homeAssignments={state.homeAssignments}
             passStates={state.passStates}
             ruinStates={state.ruinStates}
             onCurrentDayChange={handleCurrentDayChange}
+            onTribeNameChange={handleTribeNameChange}
+            onTribeEnabledChange={handleTribeEnabledChange}
+            onTribeOrderChange={handleTribeOrderChange}
+            onCurrentScoreChange={handleCurrentScoreChange}
             onAssignTribeToHome={handleAssignTribeToHome}
             onPassChange={handlePassChange}
             onRuinChange={handleRuinChange}
-            onCopyCurrentToScenario={handleCopyCurrentToScenario}
-            onBack={handleBack}
+            onResetSimulation={handleResetSimulation}
+            onSwitchToTableMode={() => handleSwitchMode("table")}
           />
-        )}
+        ) : null}
       </div>
     </main>
   );

@@ -3,6 +3,7 @@ export type RuinType = "bastion" | "valkyrie" | "temple";
 export type TribeId = string;
 export type NullableTribeId = TribeId | null;
 export type Language = "en" | "pt" | "it" | "ru" | "tr" | "de" | "fr" | "uk";
+export type OrderId = "order-a" | "order-b";
 
 export type Tribe = {
   id: TribeId;
@@ -10,6 +11,18 @@ export type Tribe = {
   color: string;
   accentColor: string;
   currentScore: number;
+  orderId: OrderId | null;
+};
+
+export type TribeSlot = {
+  id: TribeId;
+  slotIndex: number;
+  name: string;
+  color: string;
+  accentColor: string;
+  currentScore: number;
+  enabled: boolean;
+  orderId: OrderId | null;
 };
 
 export type RuinDefinition = {

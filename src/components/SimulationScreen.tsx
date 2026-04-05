@@ -9,8 +9,8 @@ import type {
   DayNumber,
   RuinState,
   RuinStateField,
-  Tribe,
   ScenarioTimelinePoint,
+  Tribe,
 } from "../types";
 import {
   PHOENIX_MOTTO,
@@ -30,26 +30,22 @@ type SimulationScreenProps = {
     field: RuinStateField,
     value: string | null
   ) => void;
-  onCopyCurrentToScenario: () => void;
-  onBack: () => void;
+  onResetSimulation: () => void;
+  onSwitchToVisualMode: () => void;
 };
 
-const numberFormatter = new Intl.NumberFormat("en-GB");
+const numberFormatter = new Intl.NumberFormat("pt-PT");
 
 function formatSigned(value: number): string {
   if (value > 0) {
-    return `+${numberFormatter.format(value)}`;
+    return `+${numberFormatter.format(Math.round(value))}`;
   }
 
   if (value < 0) {
-    return `-${numberFormatter.format(Math.abs(value))}`;
+    return `-${numberFormatter.format(Math.abs(Math.round(value)))}`;
   }
 
   return numberFormatter.format(0);
-}
-
-function isPhoenixVeritas(name: string): boolean {
-  return name.trim().toLowerCase() === "phoenix veritas";
 }
 
 function ScoreEvolutionChart({
@@ -67,17 +63,6 @@ function ScoreEvolutionChart({
   const right = 28;
   const top = 24;
   const bottom = 48;
-
-  const strokePatterns = [
-    undefined,
-    "8 6",
-    "3 5",
-    "10 4 2 4",
-    "2 4",
-    "12 6",
-    "6 4 2 4",
-    "1 4",
-  ];
 
   const allValues = timeline.flatMap((point) =>
     tribes.map((tribe) => point.scores[tribe.id] ?? 0)
@@ -118,35 +103,6 @@ function ScoreEvolutionChart({
       .join(" ");
   }
 
-  const coincidentGroupsByIndex = timeline.map((point) => {
-    const groups = new Map<number, string[]>();
-
-    tribes.forEach((tribe) => {
-      const score = point.scores[tribe.id] ?? 0;
-      const existing = groups.get(score) ?? [];
-      existing.push(tribe.id);
-      groups.set(score, existing);
-    });
-
-    return groups;
-  });
-
-  function getMarkerX(tribeId: string, pointIndex: number): number {
-    const baseX = getX(pointIndex);
-    const score = timeline[pointIndex].scores[tribeId] ?? 0;
-    const group = coincidentGroupsByIndex[pointIndex].get(score) ?? [tribeId];
-
-    if (group.length === 1) {
-      return baseX;
-    }
-
-    const tribePosition = group.indexOf(tribeId);
-    const center = (group.length - 1) / 2;
-    const spread = 6;
-
-    return baseX + (tribePosition - center) * spread;
-  }
-
   const horizontalGridValues = Array.from({ length: 5 }, (_, index) => {
     const ratio = index / 4;
     return maxValue - (maxValue - minValue) * ratio;
@@ -171,7 +127,7 @@ function ScoreEvolutionChart({
           marginBottom: "1rem",
         }}
       >
-        {tribes.map((tribe, index) => (
+        {tribes.map((tribe) => (
           <div
             key={tribe.id}
             style={{
@@ -190,27 +146,7 @@ function ScoreEvolutionChart({
                 display: "inline-block",
               }}
             />
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <svg width="18" height="8" viewBox="0 0 18 8" aria-hidden="true">
-                <line
-                  x1="1"
-                  y1="4"
-                  x2="17"
-                  y2="4"
-                  stroke={tribe.color}
-                  strokeWidth="3"
-                  strokeDasharray={strokePatterns[index % strokePatterns.length]}
-                  strokeLinecap="round"
-                />
-              </svg>
-              {tribe.name}
-            </span>
+            <span>{tribe.name}</span>
           </div>
         ))}
       </div>
@@ -277,7 +213,7 @@ function ScoreEvolutionChart({
             );
           })}
 
-          {tribes.map((tribe, index) => (
+          {tribes.map((tribe) => (
             <g key={tribe.id}>
               <path
                 d={buildPath(tribe.id)}
@@ -286,12 +222,11 @@ function ScoreEvolutionChart({
                 strokeWidth={3}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeDasharray={strokePatterns[index % strokePatterns.length]}
               />
               {timeline.map((point, pointIndex) => (
                 <circle
                   key={`${tribe.id}-${point.label}`}
-                  cx={getMarkerX(tribe.id, pointIndex)}
+                  cx={getX(pointIndex)}
                   cy={getY(point.scores[tribe.id] ?? 0)}
                   r={4.5}
                   fill={tribe.color}
@@ -315,8 +250,8 @@ export default function SimulationScreen({
   ruinStates,
   onCurrentDayChange,
   onRuinChange,
-  onCopyCurrentToScenario,
-  onBack,
+  onResetSimulation,
+  onSwitchToVisualMode,
 }: SimulationScreenProps) {
   const ruinStateMap = useMemo<Record<string, RuinState>>(
     () =>
@@ -377,13 +312,17 @@ export default function SimulationScreen({
 
   const currentProjectionMap = useMemo(
     () =>
-      Object.fromEntries(currentProjection.rows.map((row) => [row.tribeId, row])),
+      Object.fromEntries(
+        currentProjection.rows.map((row) => [row.tribeId, row])
+      ),
     [currentProjection.rows]
   );
 
   const simulatedProjectionMap = useMemo(
     () =>
-      Object.fromEntries(simulatedProjection.rows.map((row) => [row.tribeId, row])),
+      Object.fromEntries(
+        simulatedProjection.rows.map((row) => [row.tribeId, row])
+      ),
     [simulatedProjection.rows]
   );
 
@@ -465,15 +404,17 @@ export default function SimulationScreen({
             <p className="eyebrow">{t.simulation.eyebrow}</p>
             <h1>{t.simulation.day3Finish}</h1>
           </div>
+
           <div className="inline-actions">
-            <button className="secondary-button" onClick={onBack}>
-              {t.common.back}
+            <button className="secondary-button" onClick={onResetSimulation}>
+              Reset
             </button>
+
             <button
               className="secondary-button"
-              onClick={onCopyCurrentToScenario}
+              onClick={onSwitchToVisualMode}
             >
-              {t.common.copyCurrentToSimulation}
+              Mudar para modo visual
             </button>
           </div>
         </div>
@@ -579,18 +520,10 @@ export default function SimulationScreen({
                   simulatedRow?.finalScore ?? tribe.currentScore;
                 const pointsPerMinute = simulatedRow?.pointsPerMinute ?? 0;
                 const delta = simulatedFinal - currentFinal;
-                const featured = isPhoenixVeritas(tribe.name);
 
                 return (
-                  <tr
-                    key={tribe.id}
-                    className={featured ? "featured-table-row" : ""}
-                  >
-                    <td
-                      className={`tribe-name-cell ${
-                        featured ? "featured-name" : ""
-                      }`}
-                    >
+                  <tr key={tribe.id}>
+                    <td className="tribe-name-cell">
                       <span
                         style={{
                           display: "inline-block",
@@ -606,21 +539,9 @@ export default function SimulationScreen({
                     <td>{numberFormatter.format(tribe.currentScore)}</td>
                     <td>{numberFormatter.format(pendingFirstCapture)}</td>
                     <td>{numberFormatter.format(pointsPerMinute)}</td>
-                    <td>{numberFormatter.format(currentFinal)}</td>
-                    <td className="total-cell">
-                      {numberFormatter.format(simulatedFinal)}
-                    </td>
-                    <td
-                      className={
-                        delta > 0
-                          ? "delta-positive"
-                          : delta < 0
-                          ? "delta-negative"
-                          : "delta-neutral"
-                      }
-                    >
-                      {formatSigned(delta)}
-                    </td>
+                    <td>{numberFormatter.format(Math.round(currentFinal))}</td>
+                    <td>{numberFormatter.format(Math.round(simulatedFinal))}</td>
+                    <td>{formatSigned(delta)}</td>
                   </tr>
                 );
               })}
@@ -629,7 +550,11 @@ export default function SimulationScreen({
         </div>
       </section>
 
-      <ScoreEvolutionChart tribes={tribes} timeline={simulatedTimeline} t={t} />
+      <ScoreEvolutionChart
+        tribes={tribes}
+        timeline={simulatedTimeline}
+        t={t}
+      />
     </div>
   );
 }

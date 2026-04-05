@@ -3,25 +3,37 @@ import type { AppText } from "../i18n";
 import type {
   DayNumber,
   HomeAssignment,
+  OrderId,
   PassState,
   PassStateField,
   RuinState,
   RuinStateField,
+  ScenarioProjectionRow,
+  ScenarioTimelinePoint,
   Tribe,
+  TribeSlot,
 } from "../types";
 import GvgMap from "../features/gvg/components/GvgMap";
 import { HOME_NODES } from "../features/gvg/data/mapLayout";
-import { getPointsPerMinuteByOwner } from "../utils/scoring";
+import {
+  buildScenarioTimeline,
+  getPointsPerMinuteByOwner,
+  projectScenario,
+} from "../utils/scoring";
 
 type SimulationScreenVisualProps = {
   t: AppText;
-  tribes: Tribe[];
+  tribeSlots: TribeSlot[];
   currentDay: DayNumber;
   currentUtc: Date;
   homeAssignments: HomeAssignment[];
   passStates: PassState[];
   ruinStates: RuinState[];
   onCurrentDayChange: (day: DayNumber) => void;
+  onTribeNameChange: (index: number, value: string) => void;
+  onTribeEnabledChange: (index: number, value: boolean) => void;
+  onTribeOrderChange: (index: number, value: OrderId | null) => void;
+  onCurrentScoreChange: (index: number, value: number) => void;
   onAssignTribeToHome: (homeId: string, tribeId: string | null) => void;
   onPassChange: (
     passId: string,
@@ -33,8 +45,8 @@ type SimulationScreenVisualProps = {
     field: RuinStateField,
     value: string | null
   ) => void;
-  onCopyCurrentToScenario: () => void;
-  onBack: () => void;
+  onResetSimulation: () => void;
+  onSwitchToTableMode: () => void;
 };
 
 type MenuTarget =
@@ -60,66 +72,296 @@ type MenuTarget =
       y: number;
     };
 
+type ChartSeries = {
+  id: string;
+  label: string;
+  color: string;
+  accentColor: string;
+};
+
 function clampMenuPosition(x: number, y: number) {
   const width = typeof window !== "undefined" ? window.innerWidth : 1200;
   const height = typeof window !== "undefined" ? window.innerHeight : 800;
 
   return {
-    x: Math.min(Math.max(170, x), width - 170),
+    x: Math.min(Math.max(180, x), width - 180),
     y: Math.min(Math.max(120, y), height - 180),
   };
 }
 
+function formatInt(value: number): string {
+  return Math.round(value).toLocaleString("pt-PT");
+}
+
+function getHomeLabelByIdMap() {
+  return Object.fromEntries(HOME_NODES.map((home) => [home.id, home.label]));
+}
+
+function GenericTrendChart({
+  title,
+  timeline,
+  series,
+}: {
+  title: string;
+  timeline: ScenarioTimelinePoint[];
+  series: ChartSeries[];
+}) {
+  if (series.length === 0 || timeline.length === 0) {
+    return null;
+  }
+
+  const width = 760;
+  const height = 300;
+  const marginTop = 26;
+  const marginRight = 120;
+  const marginBottom = 42;
+  const marginLeft = 64;
+
+  const innerWidth = width - marginLeft - marginRight;
+  const innerHeight = height - marginTop - marginBottom;
+
+  const maxScore = Math.max(
+    1,
+    ...timeline.flatMap((point) =>
+      series.map((item) => point.scores[item.id] ?? 0)
+    )
+  );
+
+  const xAt = (index: number) =>
+    marginLeft +
+    (timeline.length === 1
+      ? innerWidth / 2
+      : (innerWidth * index) / (timeline.length - 1));
+
+  const yAt = (score: number) =>
+    marginTop + innerHeight - (score / maxScore) * innerHeight;
+
+  const yTicks = 5;
+  const tickValues = Array.from({ length: yTicks }, (_, index) =>
+    Math.round((maxScore * (yTicks - 1 - index)) / (yTicks - 1))
+  );
+
+  const rawEndLabels = series.map((item) => {
+    const lastScore = timeline[timeline.length - 1]?.scores[item.id] ?? 0;
+    return {
+      ...item,
+      x: xAt(timeline.length - 1),
+      y: yAt(lastScore),
+    };
+  });
+
+  const endLabels = [...rawEndLabels]
+    .sort((a, b) => a.y - b.y)
+    .map((item, index, arr) => {
+      if (index === 0) {
+        return item;
+      }
+
+      const minGap = 16;
+      const previous = arr[index - 1];
+      const adjustedY =
+        item.y - previous.y < minGap ? previous.y + minGap : item.y;
+
+      return {
+        ...item,
+        y: adjustedY,
+      };
+    });
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        overflow: "hidden",
+        borderRadius: 18,
+        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(255,255,255,0.02)",
+        padding: "0.45rem",
+      }}
+    >
+      <div
+        style={{
+          padding: "0.1rem 0.35rem 0.55rem 0.35rem",
+          fontWeight: 700,
+          fontSize: "0.95rem",
+        }}
+      >
+        {title}
+      </div>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height="auto"
+        role="img"
+        aria-label={title}
+      >
+        {tickValues.map((tickValue) => {
+          const y = yAt(tickValue);
+
+          return (
+            <g key={tickValue}>
+              <line
+                x1={marginLeft}
+                y1={y}
+                x2={width - marginRight}
+                y2={y}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth="1"
+              />
+              <text
+                x={marginLeft - 8}
+                y={y + 4}
+                textAnchor="end"
+                fontSize="12"
+                fill="rgba(255,255,255,0.72)"
+              >
+                {formatInt(tickValue)}
+              </text>
+            </g>
+          );
+        })}
+
+        {timeline.map((point, index) => {
+          const x = xAt(index);
+
+          return (
+            <text
+              key={point.label}
+              x={x}
+              y={height - 12}
+              textAnchor="middle"
+              fontSize="11"
+              fill="rgba(255,255,255,0.76)"
+            >
+              {point.label}
+            </text>
+          );
+        })}
+
+        {series.map((item) => {
+          const points = timeline
+            .map((point, index) => {
+              const x = xAt(index);
+              const y = yAt(point.scores[item.id] ?? 0);
+              return `${x},${y}`;
+            })
+            .join(" ");
+
+          return (
+            <g key={item.id}>
+              <polyline
+                points={points}
+                fill="none"
+                stroke={item.color}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {timeline.map((point, index) => {
+                const x = xAt(index);
+                const y = yAt(point.scores[item.id] ?? 0);
+
+                return (
+                  <circle
+                    key={`${item.id}-${point.label}`}
+                    cx={x}
+                    cy={y}
+                    r="4.5"
+                    fill={item.accentColor}
+                    stroke={item.color}
+                    strokeWidth="2"
+                  />
+                );
+              })}
+            </g>
+          );
+        })}
+
+        {endLabels.map((item) => (
+          <g key={`label-${item.id}`}>
+            <line
+              x1={item.x}
+              y1={item.y}
+              x2={item.x + 10}
+              y2={item.y}
+              stroke={item.color}
+              strokeWidth="2"
+            />
+            <text
+              x={item.x + 14}
+              y={item.y + 4}
+              fontSize="12"
+              fontWeight="700"
+              fill={item.color}
+            >
+              {item.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 export default function SimulationScreenVisual({
   t,
-  tribes,
+  tribeSlots,
   currentDay,
   currentUtc,
   homeAssignments,
   passStates,
   ruinStates,
   onCurrentDayChange,
+  onTribeNameChange,
+  onTribeEnabledChange,
+  onTribeOrderChange,
+  onCurrentScoreChange,
   onAssignTribeToHome,
   onPassChange,
   onRuinChange,
-  onCopyCurrentToScenario,
-  onBack,
+  onResetSimulation,
+  onSwitchToTableMode,
 }: SimulationScreenVisualProps) {
   const [calibrationMode, setCalibrationMode] = useState(false);
   const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null);
 
+  const activeTribes = useMemo<Tribe[]>(
+    () =>
+      tribeSlots
+        .filter((slot) => slot.enabled)
+        .map(({ slotIndex: _slotIndex, enabled: _enabled, ...tribe }) => tribe),
+    [tribeSlots]
+  );
+
   const utcDate = currentUtc.toISOString().slice(0, 10);
   const utcTime = currentUtc.toISOString().slice(11, 19);
 
-  const homeAssignmentById = useMemo(() => {
-    return Object.fromEntries(
-      homeAssignments.map((assignment) => [assignment.homeId, assignment])
-    );
-  }, [homeAssignments]);
+  const homeAssignmentById = useMemo(
+    () =>
+      Object.fromEntries(
+        homeAssignments.map((assignment) => [assignment.homeId, assignment])
+      ),
+    [homeAssignments]
+  );
 
-  const homeIdByTribeId = useMemo(() => {
-    const result: Record<string, string> = {};
+  const unusedHomeIds = useMemo(
+    () =>
+      homeAssignments
+        .filter((assignment) => !assignment.tribeId)
+        .map((assignment) => assignment.homeId),
+    [homeAssignments]
+  );
 
-    homeAssignments.forEach((assignment) => {
-      if (assignment.tribeId) {
-        result[assignment.tribeId] = assignment.homeId;
-      }
-    });
+  const passStateById = useMemo(
+    () => Object.fromEntries(passStates.map((pass) => [pass.id, pass])),
+    [passStates]
+  );
 
-    return result;
-  }, [homeAssignments]);
-
-  const homeLabelById = useMemo(() => {
-    return Object.fromEntries(HOME_NODES.map((home) => [home.id, home.label]));
-  }, []);
-
-  const passStateById = useMemo(() => {
-    return Object.fromEntries(passStates.map((pass) => [pass.id, pass]));
-  }, [passStates]);
-
-  const ruinStateById = useMemo(() => {
-    return Object.fromEntries(ruinStates.map((ruin) => [ruin.id, ruin]));
-  }, [ruinStates]);
+  const ruinStateById = useMemo(
+    () => Object.fromEntries(ruinStates.map((ruin) => [ruin.id, ruin])),
+    [ruinStates]
+  );
 
   const effectiveRuinStates = useMemo(
     () =>
@@ -130,15 +372,113 @@ export default function SimulationScreenVisual({
     [ruinStates]
   );
 
-  const ppmByOwner = useMemo(
+  const pointsPerMinuteByOwner = useMemo(
     () =>
       getPointsPerMinuteByOwner(
-        tribes,
+        activeTribes,
         effectiveRuinStates,
         currentDay,
         "simulatedOwner"
       ),
-    [tribes, effectiveRuinStates, currentDay]
+    [activeTribes, effectiveRuinStates, currentDay]
+  );
+
+  const projection = useMemo(
+    () =>
+      projectScenario({
+        tribes: activeTribes,
+        ruinStates: effectiveRuinStates,
+        currentDay,
+        ownerField: "simulatedOwner",
+        now: currentUtc,
+      }),
+    [activeTribes, effectiveRuinStates, currentDay, currentUtc]
+  );
+
+  const timeline = useMemo(
+    () =>
+      buildScenarioTimeline({
+        tribes: activeTribes,
+        ruinStates: effectiveRuinStates,
+        currentDay,
+        ownerField: "simulatedOwner",
+        now: currentUtc,
+      }),
+    [activeTribes, effectiveRuinStates, currentDay, currentUtc]
+  );
+
+  const orderTimeline = useMemo(() => {
+    const tribeOrderById = new Map(
+      tribeSlots
+        .filter((slot) => slot.enabled && slot.orderId)
+        .map((slot) => [slot.id, slot.orderId as OrderId])
+    );
+
+    return timeline.map((point) => {
+      let orderA = 0;
+      let orderB = 0;
+
+      Object.entries(point.scores).forEach(([tribeId, score]) => {
+        const orderId = tribeOrderById.get(tribeId);
+        if (orderId === "order-a") {
+          orderA += score;
+        } else if (orderId === "order-b") {
+          orderB += score;
+        }
+      });
+
+      return {
+        label: point.label,
+        scores: {
+          "order-a": orderA,
+          "order-b": orderB,
+        },
+      };
+    });
+  }, [timeline, tribeSlots]);
+
+  const orderSeries = useMemo(() => {
+    const hasOrderA = tribeSlots.some(
+      (slot) => slot.enabled && slot.orderId === "order-a"
+    );
+    const hasOrderB = tribeSlots.some(
+      (slot) => slot.enabled && slot.orderId === "order-b"
+    );
+
+    const result: ChartSeries[] = [];
+
+    if (hasOrderA) {
+      result.push({
+        id: "order-a",
+        label: "Order A",
+        color: "#ffb300",
+        accentColor: "#ffe082",
+      });
+    }
+
+    if (hasOrderB) {
+      result.push({
+        id: "order-b",
+        label: "Order B",
+        color: "#29b6f6",
+        accentColor: "#81d4fa",
+      });
+    }
+
+    return result;
+  }, [tribeSlots]);
+
+  const projectionRowById = useMemo(
+    () =>
+      new Map<string, ScenarioProjectionRow>(
+        projection.rows.map((row) => [row.tribeId, row])
+      ),
+    [projection.rows]
+  );
+
+  const rankedProjectionRows = useMemo(
+    () => [...projection.rows].sort((a, b) => b.finalScore - a.finalScore),
+    [projection.rows]
   );
 
   const nodeColorSchemes = useMemo(() => {
@@ -149,7 +489,7 @@ export default function SimulationScreenVisual({
         return;
       }
 
-      const tribe = tribes.find((item) => item.id === assignment.tribeId);
+      const tribe = activeTribes.find((item) => item.id === assignment.tribeId);
       if (!tribe) {
         return;
       }
@@ -166,7 +506,7 @@ export default function SimulationScreenVisual({
         return;
       }
 
-      const tribe = tribes.find((item) => item.id === owner);
+      const tribe = activeTribes.find((item) => item.id === owner);
       if (!tribe) {
         return;
       }
@@ -183,7 +523,7 @@ export default function SimulationScreenVisual({
         return;
       }
 
-      const tribe = tribes.find((item) => item.id === owner);
+      const tribe = activeTribes.find((item) => item.id === owner);
       if (!tribe) {
         return;
       }
@@ -195,7 +535,7 @@ export default function SimulationScreenVisual({
     });
 
     return schemes;
-  }, [homeAssignments, passStates, ruinStates, tribes]);
+  }, [homeAssignments, passStates, ruinStates, activeTribes]);
 
   const firstCaptureRuinIds = useMemo(
     () =>
@@ -204,6 +544,8 @@ export default function SimulationScreenVisual({
         .map((ruin) => ruin.id),
     [ruinStates]
   );
+
+  const homeLabelById = useMemo(() => getHomeLabelByIdMap(), []);
 
   function openMenu(
     kind: "home" | "pass" | "ruin",
@@ -326,8 +668,6 @@ export default function SimulationScreenVisual({
     );
   }
 
-  const highlightedNodeId = menuTarget?.id ?? null;
-
   return (
     <div className="stack" style={{ position: "relative" }}>
       <section className="card">
@@ -339,10 +679,6 @@ export default function SimulationScreenVisual({
           </div>
 
           <div className="inline-actions">
-            <button className="secondary-button" onClick={onBack}>
-              {t.common.back}
-            </button>
-
             <button
               className="secondary-button"
               onClick={() => setCalibrationMode((prev) => !prev)}
@@ -352,11 +688,15 @@ export default function SimulationScreenVisual({
                 : t.simulationVisual.calibrationOn}
             </button>
 
+            <button className="secondary-button" onClick={onResetSimulation}>
+              Reset
+            </button>
+
             <button
               className="secondary-button"
-              onClick={onCopyCurrentToScenario}
+              onClick={onSwitchToTableMode}
             >
-              {t.common.copyCurrentToSimulation}
+              Mudar para modo tabela
             </button>
           </div>
         </div>
@@ -388,10 +728,10 @@ export default function SimulationScreenVisual({
       <section className="card">
         <div className="card-header">
           <div>
-            <h2>Tribos em jogo</h2>
+            <h2>Tribos</h2>
             <p className="phoenix-subtitle" style={{ marginTop: 4 }}>
-              Clica diretamente num home, pass ou ruína para escolher a tribo no menu.
-              Click direito numa ruína alterna a first capture.
+              Homes sem tribo ficam esbatidos. O seletor de Order já fica pronto
+              para a próxima fase.
             </p>
           </div>
         </div>
@@ -399,32 +739,34 @@ export default function SimulationScreenVisual({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "0.85rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(205px, 1fr))",
+            gap: "0.7rem",
           }}
         >
-          {tribes.map((tribe) => {
-            const assignedHomeId = homeIdByTribeId[tribe.id] ?? null;
-            const assignedHomeLabel = assignedHomeId
-              ? homeLabelById[assignedHomeId] ?? assignedHomeId
-              : "Sem home";
-            const ppm = ppmByOwner.get(tribe.id) ?? 0;
+          {tribeSlots.map((slot) => {
+            const ppm = pointsPerMinuteByOwner.get(slot.id) ?? 0;
+            const finalProjected =
+              projectionRowById.get(slot.id)?.finalScore ?? slot.currentScore;
 
             return (
               <div
-                key={tribe.id}
+                key={slot.id}
                 className="card"
                 style={{
-                  padding: "0.9rem 1rem",
+                  padding: "0.7rem 0.8rem",
                   background: "rgba(255,255,255,0.03)",
                   border: "1px solid rgba(255,255,255,0.1)",
+                  opacity: slot.enabled ? 1 : 0.5,
+                  minHeight: 0,
                 }}
               >
                 <div
                   style={{
-                    display: "flex",
+                    display: "grid",
+                    gridTemplateColumns: "18px minmax(0,1fr) auto",
+                    gap: "0.5rem",
                     alignItems: "center",
-                    gap: "0.8rem",
+                    marginBottom: "0.5rem",
                   }}
                 >
                   <span
@@ -432,7 +774,6 @@ export default function SimulationScreenVisual({
                       position: "relative",
                       width: 18,
                       height: 18,
-                      flexShrink: 0,
                     }}
                   >
                     <span
@@ -440,7 +781,7 @@ export default function SimulationScreenVisual({
                         position: "absolute",
                         inset: 0,
                         borderRadius: 999,
-                        background: tribe.color,
+                        background: slot.color,
                         border: "2px solid rgba(255,255,255,0.9)",
                       }}
                     />
@@ -449,36 +790,155 @@ export default function SimulationScreenVisual({
                         position: "absolute",
                         inset: 4,
                         borderRadius: 999,
-                        background: tribe.accentColor,
+                        background: slot.accentColor,
                         border: "1px solid rgba(255,255,255,0.55)",
                       }}
                     />
                   </span>
 
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700 }}>{tribe.name}</div>
-                    <div style={{ opacity: 0.82, fontSize: "0.92rem" }}>
-                      {assignedHomeLabel}
-                    </div>
-                  </div>
+                  <input
+                    type="text"
+                    value={slot.name}
+                    onChange={(event) =>
+                      onTribeNameChange(slot.slotIndex, event.target.value)
+                    }
+                    style={{
+                      width: "100%",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 10,
+                      padding: "0.38rem 0.54rem",
+                      minWidth: 0,
+                    }}
+                  />
+
+                  <label
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: "0.72rem",
+                    }}
+                  >
+                    <span>Jogo</span>
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={(event) =>
+                        onTribeEnabledChange(slot.slotIndex, event.target.checked)
+                      }
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </label>
                 </div>
 
                 <div
                   style={{
-                    marginTop: "0.7rem",
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: "0.5rem",
+                    alignItems: "center",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <span style={{ opacity: 0.72, fontSize: "0.76rem" }}>
+                      Score
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={slot.currentScore}
+                      onChange={(event) =>
+                        onCurrentScoreChange(
+                          slot.slotIndex,
+                          Number(event.target.value) || 0
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        background: "rgba(255,255,255,0.06)",
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 10,
+                        padding: "0.35rem 0.52rem",
+                      }}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      minWidth: 94,
+                    }}
+                  >
+                    <span style={{ opacity: 0.72, fontSize: "0.76rem" }}>
+                      Order
+                    </span>
+                    <select
+                      value={slot.orderId ?? ""}
+                      onChange={(event) =>
+                        onTribeOrderChange(
+                          slot.slotIndex,
+                          (event.target.value as OrderId) || null
+                        )
+                      }
+                      style={{
+                        background: "rgba(18,31,74,0.98)",
+                        color: "#ffffff",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        borderRadius: 10,
+                        padding: "0.35rem 0.45rem",
+                      }}
+                    >
+                      <option
+                        value=""
+                        style={{ background: "#0b1e56", color: "#fff" }}
+                      >
+                        —
+                      </option>
+                      <option
+                        value="order-a"
+                        style={{ background: "#0b1e56", color: "#fff" }}
+                      >
+                        Order A
+                      </option>
+                      <option
+                        value="order-b"
+                        style={{ background: "#0b1e56", color: "#fff" }}
+                      >
+                        Order B
+                      </option>
+                    </select>
+                  </label>
+                </div>
+
+                <div
+                  style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
-                    gap: "0.5rem",
-                    fontSize: "0.92rem",
+                    gap: "0.45rem 0.7rem",
+                    fontSize: "0.84rem",
                   }}
                 >
                   <div>
-                    <div style={{ opacity: 0.72 }}>Score</div>
-                    <strong>{tribe.currentScore.toLocaleString()}</strong>
+                    <div style={{ opacity: 0.68 }}>PPM</div>
+                    <strong>{formatInt(ppm)}</strong>
                   </div>
                   <div>
-                    <div style={{ opacity: 0.72 }}>PPM</div>
-                    <strong>{ppm.toLocaleString()}</strong>
+                    <div style={{ opacity: 0.68 }}>Final</div>
+                    <strong>{formatInt(finalProjected)}</strong>
                   </div>
                 </div>
               </div>
@@ -491,9 +951,10 @@ export default function SimulationScreenVisual({
         t={t}
         currentDay={currentDay}
         calibrationMode={calibrationMode}
-        highlightedNodeId={highlightedNodeId}
+        highlightedNodeId={menuTarget?.id ?? null}
         nodeColorSchemes={nodeColorSchemes}
         firstCaptureRuinIds={firstCaptureRuinIds}
+        unusedHomeIds={unusedHomeIds}
         onHomeClick={handleHomeClick}
         onPassClick={handlePassClick}
         onRuinClick={handleRuinClick}
@@ -555,12 +1016,24 @@ export default function SimulationScreenVisual({
             <select
               value={getMenuValue()}
               onChange={(event) => applyMenuSelection(event.target.value)}
+              style={{
+                background: "rgba(18,31,74,0.98)",
+                color: "#ffffff",
+                border: "1px solid rgba(255,255,255,0.16)",
+              }}
             >
-              <option value="">
+              <option
+                value=""
+                style={{ background: "#0b1e56", color: "#fff" }}
+              >
                 {menuTarget.kind === "home" ? "Sem tribo" : "Neutro"}
               </option>
-              {tribes.map((tribe) => (
-                <option key={tribe.id} value={tribe.id}>
+              {activeTribes.map((tribe) => (
+                <option
+                  key={tribe.id}
+                  value={tribe.id}
+                  style={{ background: "#0b1e56", color: "#fff" }}
+                >
                   {tribe.name}
                 </option>
               ))}
@@ -584,14 +1057,159 @@ export default function SimulationScreenVisual({
       <section className="card">
         <div className="card-header">
           <div>
-            <h2>{t.simulationVisual.nextStepTitle}</h2>
+            <h2>Previsão do cenário</h2>
+            <p className="phoenix-subtitle" style={{ marginTop: 4 }}>
+              Tabela mais compacta e dois gráficos à direita.
+            </p>
           </div>
         </div>
 
-        <div className="note-box">
-          {t.simulationVisual.nextStepBodyLine1}
-          <br />
-          {t.simulationVisual.nextStepBodyLine2}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 0.92fr) minmax(500px, 1.08fr)",
+            gap: "0.95rem",
+            alignItems: "start",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 18,
+              overflow: "hidden",
+              background: "rgba(255,255,255,0.02)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "42px minmax(150px, 1.45fr) repeat(5, minmax(68px, 0.82fr))",
+                gap: 0,
+                padding: "0.62rem 0.68rem",
+                background: "rgba(255,255,255,0.03)",
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                fontWeight: 700,
+                textAlign: "center",
+              }}
+            >
+              <div>#</div>
+              <div style={{ textAlign: "left" }}>Tribo</div>
+              <div>Atual</div>
+              <div>1st</div>
+              <div>PPM</div>
+              <div>Prod.</div>
+              <div>Final</div>
+            </div>
+
+            {rankedProjectionRows.map((row, index) => {
+              const tribe = activeTribes.find((item) => item.id === row.tribeId);
+
+              return (
+                <div
+                  key={row.tribeId}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "42px minmax(150px, 1.45fr) repeat(5, minmax(68px, 0.82fr))",
+                    gap: 0,
+                    padding: "0.56rem 0.68rem",
+                    borderBottom:
+                      index === rankedProjectionRows.length - 1
+                        ? "none"
+                        : "1px solid rgba(255,255,255,0.06)",
+                    textAlign: "center",
+                    alignItems: "center",
+                    fontSize: "0.93rem",
+                  }}
+                >
+                  <div>{index + 1}</div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.55rem",
+                      textAlign: "left",
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "relative",
+                        width: 16,
+                        height: 16,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          borderRadius: 999,
+                          background: tribe?.color ?? "#9ca3af",
+                          border: "2px solid rgba(255,255,255,0.9)",
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          inset: 4,
+                          borderRadius: 999,
+                          background: tribe?.accentColor ?? "#e5e7eb",
+                        }}
+                      />
+                    </span>
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {row.tribeName}
+                    </span>
+                  </div>
+
+                  <div>{formatInt(row.currentScore)}</div>
+                  <div>{formatInt(row.pendingFirstCapture)}</div>
+                  <div>{formatInt(row.pointsPerMinute)}</div>
+                  <div>{formatInt(row.addedProduction)}</div>
+                  <div>
+                    <strong>{formatInt(row.finalScore)}</strong>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "0.85rem",
+            }}
+          >
+            <GenericTrendChart
+              title="Evolução por tribo"
+              timeline={timeline}
+              series={tribeSlots
+                .filter((slot) => slot.enabled)
+                .map((slot) => ({
+                  id: slot.id,
+                  label: slot.name,
+                  color: slot.color,
+                  accentColor: slot.accentColor,
+                }))}
+            />
+
+            {orderSeries.length > 0 ? (
+              <GenericTrendChart
+                title="Evolução por Order"
+                timeline={orderTimeline}
+                series={orderSeries}
+              />
+            ) : null}
+          </div>
         </div>
       </section>
     </div>

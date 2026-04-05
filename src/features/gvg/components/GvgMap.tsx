@@ -30,11 +30,12 @@ type GvgMapProps = {
   calibrationMode?: boolean;
   nodeColorSchemes?: Partial<Record<string, ColorScheme>>;
   firstCaptureRuinIds?: string[];
+  unusedHomeIds?: string[];
 };
 
 const NEUTRAL_SCHEME: ColorScheme = {
-  primary: "#9ca3af",
-  secondary: "#e5e7eb",
+  primary: "#8f98aa",
+  secondary: "#d6d9df",
 };
 
 function round2(value: number): number {
@@ -120,7 +121,14 @@ function renderRuinBadgeBase(
   );
 }
 
-function renderHomeIcon(scheme: ColorScheme, isSelected: boolean) {
+function renderHomeIcon(
+  scheme: ColorScheme,
+  isSelected: boolean,
+  isUnusedHome: boolean
+) {
+  const primary = isUnusedHome ? "rgba(160,168,184,0.36)" : scheme.primary;
+  const secondary = isUnusedHome ? "rgba(230,233,238,0.26)" : scheme.secondary;
+
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
       <circle
@@ -128,7 +136,7 @@ function renderHomeIcon(scheme: ColorScheme, isSelected: boolean) {
         cy="12"
         r="11"
         fill="transparent"
-        stroke={scheme.primary}
+        stroke={primary}
         strokeWidth="3.4"
       />
       <circle
@@ -136,7 +144,7 @@ function renderHomeIcon(scheme: ColorScheme, isSelected: boolean) {
         cy="12"
         r="8.5"
         fill="transparent"
-        stroke={scheme.secondary}
+        stroke={secondary}
         strokeWidth="3"
       />
       {isSelected ? (
@@ -251,9 +259,14 @@ function renderTempleIcon(scheme: ColorScheme, isSelected: boolean) {
   );
 }
 
-function renderNodeIcon(node: MapNode, scheme: ColorScheme, isSelected: boolean) {
+function renderNodeIcon(
+  node: MapNode,
+  scheme: ColorScheme,
+  isSelected: boolean,
+  isUnusedHome: boolean
+) {
   if (node.kind === "home") {
-    return renderHomeIcon(scheme, isSelected);
+    return renderHomeIcon(scheme, isSelected, isUnusedHome);
   }
 
   if (node.kind === "pass") {
@@ -292,6 +305,7 @@ export default function GvgMap({
   calibrationMode = false,
   nodeColorSchemes,
   firstCaptureRuinIds = [],
+  unusedHomeIds = [],
 }: GvgMapProps) {
   const [nodes, setNodes] = useState<MapNode[]>(() =>
     cloneNodes(INITIAL_MAP_NODES)
@@ -311,6 +325,11 @@ export default function GvgMap({
   const firstCaptureSet = useMemo(
     () => new Set(firstCaptureRuinIds),
     [firstCaptureRuinIds]
+  );
+
+  const unusedHomeSet = useMemo(
+    () => new Set(unusedHomeIds),
+    [unusedHomeIds]
   );
 
   function moveSelected(dx: number, dy: number) {
@@ -473,6 +492,10 @@ ${ruins
             const isOpen = isNodeOpen(node, currentDay);
             const hasFirstCapture =
               node.kind === "ruin" && firstCaptureSet.has(node.id);
+            const isUnusedHome =
+              !calibrationMode &&
+              node.kind === "home" &&
+              unusedHomeSet.has(node.id);
 
             return (
               <button
@@ -505,9 +528,11 @@ ${ruins
                   border: "none",
                   background: "transparent",
                   cursor: calibrationMode || isOpen ? "pointer" : "not-allowed",
-                  opacity: isOpen ? 1 : 0.45,
+                  opacity: isUnusedHome ? 0.38 : isOpen ? 1 : 0.45,
                   filter: shouldGlow
                     ? "drop-shadow(0 0 9px rgba(255,255,255,0.98))"
+                    : isUnusedHome
+                    ? "grayscale(0.35)"
                     : isOpen
                     ? "drop-shadow(0 1px 3px rgba(0,0,0,0.45))"
                     : "grayscale(0.35) brightness(0.8)",
@@ -557,7 +582,7 @@ ${ruins
                 }}
               >
                 <>
-                  {renderNodeIcon(node, scheme, shouldGlow)}
+                  {renderNodeIcon(node, scheme, shouldGlow, isUnusedHome)}
 
                   {node.kind !== "home" ? (
                     <>
