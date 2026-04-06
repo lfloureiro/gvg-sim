@@ -450,16 +450,16 @@ export default function SimulationScreenVisual({
     if (hasOrderA) {
       result.push({
         id: "order-a",
-        label: "Order A",
-        color: "#ffb300",
-        accentColor: "#ffe082",
+        label: "Chaos",
+        color: "#ff1e00f6",
+        accentColor: "#ff8282fa",
       });
     }
 
     if (hasOrderB) {
       result.push({
         id: "order-b",
-        label: "Order B",
+        label: "Order",
         color: "#29b6f6",
         accentColor: "#81d4fa",
       });
@@ -912,13 +912,13 @@ export default function SimulationScreenVisual({
                         value="order-a"
                         style={{ background: "#0b1e56", color: "#fff" }}
                       >
-                        Order A
+                        Chaos
                       </option>
                       <option
                         value="order-b"
                         style={{ background: "#0b1e56", color: "#fff" }}
                       >
-                        Order B
+                        Order
                       </option>
                     </select>
                   </label>

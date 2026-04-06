@@ -575,19 +575,24 @@ export default function GvgSimulatorApp({
     }));
   }
 
-  function handleResetSimulation() {
-    setState((previous) => ({
-      ...previous,
-      passStates: previous.passStates.map((passState) => ({
-        ...passState,
-        simulatedOwner: passState.currentOwner,
-      })),
-      ruinStates: previous.ruinStates.map((ruinState) => ({
-        ...ruinState,
-        simulatedOwner: ruinState.currentOwner,
-      })),
-    }));
-  }
+function handleResetSimulation() {
+  setState((previous) => ({
+    ...previous,
+    currentDay: 1,
+    tribeOrders: Array.from({ length: previous.tribeOrders.length }, () => null),
+    passStates: previous.passStates.map((passState) => ({
+      ...passState,
+      currentOwner: null,
+      simulatedOwner: null,
+    })),
+    ruinStates: previous.ruinStates.map((ruinState) => ({
+      ...ruinState,
+      firstCaptureBy: null,
+      currentOwner: null,
+      simulatedOwner: null,
+    })),
+  }));
+}
 
   function handleContinue() {
     const enabledIndexes = state.tribeEnabled
