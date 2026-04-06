@@ -24,7 +24,7 @@ const SLOT_ORDER: ArtifactSlotKey[] = [
 const COLORS: ArtifactColor[] = ["grey", "green", "blue", "purple", "gold", "red"];
 const CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
 
-type ConfidenceLabel = (typeof CONFIDENCE_LEVELS)[number];
+// type ConfidenceLabel = (typeof CONFIDENCE_LEVELS)[number];
 
 export type ArmyTypeMlModel = {
   version: 1;
