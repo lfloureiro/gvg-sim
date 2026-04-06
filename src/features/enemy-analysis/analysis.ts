@@ -45,6 +45,29 @@ export type EnemyAnalysisRow = {
   armyScores: Record<ArmyType, number>;
 };
 
+export type ArtifactSlotOverride = {
+  color?: ArtifactColor;
+  level?: number;
+  runeColor?: ArtifactColor;
+};
+
+export type EnemyAnalysisRowOverride = {
+  chiefName?: string;
+  individualMight?: number;
+  heroMight?: number;
+  armyType?: ArmyType;
+  ignored?: boolean;
+  notes?: string;
+  slots?: Partial<Record<ArtifactSlotKey, ArtifactSlotOverride>>;
+};
+
+export type EnemyAnalysisEffectiveRow = EnemyAnalysisRow & {
+  ignored: boolean;
+  notes: string;
+  hasManualChanges: boolean;
+  sourceRow: EnemyAnalysisRow;
+};
+
 type GroupedRows = {
   armyType: ArmyType;
   label: string;
@@ -751,6 +774,110 @@ export function getPrimarySlotSummary(row: EnemyAnalysisRow) {
   const second = row.slots[secondKey];
 
   return `${getSlotLabel(first.slot)} ${capitalize(first.color)} Lv.${first.level} · ${getSlotLabel(second.slot)} ${capitalize(second.color)} Lv.${second.level}`;
+}
+
+export function applyEnemyAnalysisOverride(
+  row: EnemyAnalysisRow,
+  override?: EnemyAnalysisRowOverride
+): EnemyAnalysisEffectiveRow {
+  const mergedSlots = Object.fromEntries(
+    SLOT_ORDER.map((slotKey) => {
+      const baseSlot = row.slots[slotKey];
+      const slotOverride = override?.slots?.[slotKey];
+
+      const color = slotOverride?.color ?? baseSlot.color;
+      const level = slotOverride?.level ?? baseSlot.level;
+      const runeColor = slotOverride?.runeColor ?? baseSlot.runeColor;
+
+      return [
+        slotKey,
+        {
+          ...baseSlot,
+          color,
+          level,
+          runeColor,
+          score: COLOR_WEIGHTS[color] * 100 + level,
+          runeScore: COLOR_WEIGHTS[runeColor],
+        },
+      ];
+    })
+  ) as Record<ArtifactSlotKey, ArtifactSlotAnalysis>;
+
+  const chiefName = override?.chiefName ?? row.chiefName;
+  const individualMight = override?.individualMight ?? row.individualMight;
+  const heroMight = override?.heroMight ?? row.heroMight;
+  const armyScores = buildArmyScores(mergedSlots);
+  const armyType = override?.armyType ?? decideArmyType(armyScores, mergedSlots);
+  const confidence = getConfidenceLabel(armyScores, armyType, chiefName);
+
+  return {
+    ...row,
+    chiefName,
+    individualMight,
+    heroMight,
+    armyType,
+    confidence,
+    slots: mergedSlots,
+    armyScores,
+    ignored: override?.ignored ?? false,
+    notes: override?.notes?.trim() ?? "",
+    hasManualChanges: hasRowOverrideChanges(override),
+    sourceRow: row,
+  };
+}
+
+export function getEnemyAnalysisWarnings(row: EnemyAnalysisRow): string[] {
+  const warnings: string[] = [];
+
+  if (row.chiefName === "Unknown") {
+    warnings.push("Name OCR failed");
+  } else {
+    if (row.chiefName.length < 4) {
+      warnings.push("Name looks too short");
+    }
+
+    if (/[._-]$/.test(row.chiefName)) {
+      warnings.push("Name ends with trailing symbol");
+    }
+  }
+
+  if (row.individualMight <= 0) {
+    warnings.push("Individual Might is missing or invalid");
+  }
+
+  if (row.confidence === "low") {
+    warnings.push("Army type confidence is low");
+  }
+
+  return warnings;
+}
+
+function hasRowOverrideChanges(override?: EnemyAnalysisRowOverride) {
+  if (!override) {
+    return false;
+  }
+
+  if (
+    override.chiefName !== undefined ||
+    override.individualMight !== undefined ||
+    override.heroMight !== undefined ||
+    override.armyType !== undefined ||
+    override.ignored !== undefined ||
+    (override.notes?.trim() ?? "") !== ""
+  ) {
+    return true;
+  }
+
+  if (!override.slots) {
+    return false;
+  }
+
+  return Object.values(override.slots).some(
+    (slotOverride) =>
+      slotOverride?.color !== undefined ||
+      slotOverride?.level !== undefined ||
+      slotOverride?.runeColor !== undefined
+  );
 }
 
 function compareRows(
