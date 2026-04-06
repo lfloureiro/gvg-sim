@@ -9,6 +9,7 @@ import {
   getEnemyAnalysisWarnings,
   getPrimarySlotSummary,
   groupRowsByArmy,
+  type AnalysisMode,
   type AnalysisProgress,
   type ArmyType,
   type ArtifactColor,
@@ -18,6 +19,21 @@ import {
   type EnemyAnalysisRowOverride,
   type SortField,
 } from "./analysis";
+import {
+  appendEnemyAnalysisFeedbackToLocalMemory,
+  buildEnemyAnalysisFeedbackEntries,
+  buildLearnedOverrideSuggestions,
+  clearEnemyAnalysisFeedbackMemory,
+  downloadTextFile,
+  exportFeedbackEntriesAsJsonl,
+  getEnemyAnalysisLearningSummary,
+} from "./enemyAnalysisLearning";
+import {
+  buildArmyTypeMlOverrideSuggestions,
+  clearArmyTypeMlModel,
+  getArmyTypeMlSummary,
+  trainAndSaveArmyTypeModelFromLearningMemory,
+} from "./enemyAnalysisLightMl";
 import EnemyTribeDebugScreen from "./EnemyTribeDebugScreen";
 
 type EnemyTribeAnalysisScreenProps = {
@@ -73,6 +89,7 @@ const ARTIFACT_COLORS: ArtifactColor[] = [
 
 type DiscordDestino = keyof typeof DISCORD_WEBHOOKS;
 type OverrideMap = Record<string, EnemyAnalysisRowOverride>;
+type SlotOverrideField = "color" | "level" | "runeColor";
 
 type CorrectionFilePayload = {
   version: 1;
@@ -89,8 +106,11 @@ export default function EnemyTribeAnalysisScreen({
   const sortField: SortField = "individualMight";
   const [rows, setRows] = useState<EnemyAnalysisRow[]>([]);
   const [manualOverrides, setManualOverrides] = useState<OverrideMap>({});
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("fast");
   const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [error, setError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [learningRefreshKey, setLearningRefreshKey] = useState(0);
   const [selectedFolderLabel, setSelectedFolderLabel] = useState("");
   const [fallbackPickerKey, setFallbackPickerKey] = useState(0);
   const [correctionsPickerKey, setCorrectionsPickerKey] = useState(0);
@@ -118,6 +138,8 @@ export default function EnemyTribeAnalysisScreen({
   );
 
   const counts = useMemo(() => countByArmyType(activeRows), [activeRows]);
+  const learningSummary = useMemo(() => getEnemyAnalysisLearningSummary(), [learningRefreshKey]);
+  const mlSummary = useMemo(() => getArmyTypeMlSummary(), [learningRefreshKey]);
 
   const reviewRows = useMemo(
     () =>
@@ -142,6 +164,7 @@ export default function EnemyTribeAnalysisScreen({
     }
 
     setError("");
+    setStatusMessage("");
     setRows([]);
     setManualOverrides({});
     setSelectedFolderLabel(folderLabel);
@@ -151,12 +174,12 @@ export default function EnemyTribeAnalysisScreen({
         left.file.name.localeCompare(right.file.name)
       );
 
-      const results = await analyzeEnemyImages(
-        orderedFiles.map((entry) => entry.file),
-        (nextProgress) => {
+      const results = await analyzeEnemyImages(orderedFiles.map((entry) => entry.file), {
+        mode: analysisMode,
+        onProgress: (nextProgress) => {
           setProgress(nextProgress);
-        }
-      );
+        },
+      });
 
       setRows(results);
     } catch {
@@ -247,7 +270,7 @@ export default function EnemyTribeAnalysisScreen({
   function updateSlotOverride(
     fileName: string,
     slot: ArtifactSlotKey,
-    field: keyof NonNullable<EnemyAnalysisRowOverride["slots"]>[ArtifactSlotKey],
+    field: SlotOverrideField,
     value: ArtifactColor | number | undefined
   ) {
     updateRowOverride(fileName, (current) => {
@@ -300,12 +323,138 @@ export default function EnemyTribeAnalysisScreen({
       const parsed = JSON.parse(raw) as Partial<CorrectionFilePayload>;
       const importedOverrides = sanitizeOverrideMap(parsed.overrides);
       setManualOverrides(importedOverrides);
-      alert("Corrections loaded.");
+      setStatusMessage("Corrections loaded.");
     } catch {
-      alert("Could not load the corrections file.");
+      setStatusMessage("Could not load the corrections file.");
     } finally {
       setCorrectionsPickerKey((value) => value + 1);
     }
+  }
+
+  function mergeRowOverrides(
+    current: EnemyAnalysisRowOverride,
+    incoming: EnemyAnalysisRowOverride
+  ): EnemyAnalysisRowOverride {
+    const merged: EnemyAnalysisRowOverride = {
+      ...current,
+      ...incoming,
+    };
+
+    if (current.slots || incoming.slots) {
+      merged.slots = {
+        ...(current.slots ?? {}),
+        ...(incoming.slots ?? {}),
+      };
+    }
+
+    if (current.notes && incoming.notes && current.notes !== incoming.notes) {
+      merged.notes = `${current.notes} | ${incoming.notes}`;
+    }
+
+    return cleanupOverride(merged);
+  }
+
+  function applySuggestedOverrides(suggestions: OverrideMap) {
+    setManualOverrides((current) => {
+      const next: OverrideMap = { ...current };
+
+      for (const [fileName, suggestion] of Object.entries(suggestions)) {
+        next[fileName] = mergeRowOverrides(next[fileName] ?? {}, suggestion);
+      }
+
+      return sanitizeOverrideMap(next);
+    });
+  }
+
+  function handleApplyLearnedSuggestions() {
+    const suggestions = buildLearnedOverrideSuggestions(rows);
+    applySuggestedOverrides(suggestions);
+    setStatusMessage(
+      Object.keys(suggestions).length
+        ? `Applied ${Object.keys(suggestions).length} learned suggestion(s).`
+        : "No learned suggestions matched this batch."
+    );
+  }
+
+  function handleSaveCorrectionsToLearningMemory() {
+    const entries = buildEnemyAnalysisFeedbackEntries(
+      rows,
+      manualOverrides,
+      selectedFolderLabel || "enemy-analysis",
+      analysisMode
+    );
+
+    if (!entries.length) {
+      setStatusMessage("There are no manual corrections to save into learning memory.");
+      return;
+    }
+
+    const total = appendEnemyAnalysisFeedbackToLocalMemory(entries);
+    setLearningRefreshKey((value) => value + 1);
+    setStatusMessage(
+      `Saved ${entries.length} correction example(s) to learning memory. Total memory entries: ${total}.`
+    );
+  }
+
+  function handleExportMlFeedback() {
+    const entries = buildEnemyAnalysisFeedbackEntries(
+      rows,
+      manualOverrides,
+      selectedFolderLabel || "enemy-analysis",
+      analysisMode
+    );
+
+    if (!entries.length) {
+      setStatusMessage("There are no manual corrections to export as ML feedback.");
+      return;
+    }
+
+    downloadTextFile(
+      `${selectedFolderLabel || "enemy-analysis"}-ml-feedback.jsonl`,
+      exportFeedbackEntriesAsJsonl(entries),
+      "application/x-ndjson;charset=utf-8"
+    );
+    setStatusMessage(`Exported ${entries.length} ML feedback example(s).`);
+  }
+
+  function handleTrainLightMl() {
+    const model = trainAndSaveArmyTypeModelFromLearningMemory();
+    if (!model) {
+      setStatusMessage("Not enough learning memory to train the light ML model yet.");
+      return;
+    }
+
+    setLearningRefreshKey((value) => value + 1);
+    setStatusMessage(
+      `Light ML trained with ${model.trainingExamples} examples. Training accuracy: ${Math.round(
+        model.trainingAccuracy * 100
+      )}%.`
+    );
+  }
+
+  function handleApplyMlSuggestions() {
+    const suggestions = buildArmyTypeMlOverrideSuggestions(effectiveRows, {
+      confidenceThreshold: 0.82,
+      marginThreshold: 0.14,
+    });
+    applySuggestedOverrides(suggestions);
+    setStatusMessage(
+      Object.keys(suggestions).length
+        ? `Applied ${Object.keys(suggestions).length} ML army suggestion(s).`
+        : "The ML model did not find any high-confidence army correction for this batch."
+    );
+  }
+
+  function handleClearLearningMemory() {
+    clearEnemyAnalysisFeedbackMemory();
+    setLearningRefreshKey((value) => value + 1);
+    setStatusMessage("Learning memory cleared.");
+  }
+
+  function handleClearMlModel() {
+    clearArmyTypeMlModel();
+    setLearningRefreshKey((value) => value + 1);
+    setStatusMessage("Light ML model cleared.");
   }
 
   return (
@@ -381,6 +530,26 @@ export default function EnemyTribeAnalysisScreen({
 
             <button className="secondary-button" onClick={resetAllOverrides}>
               Reset all corrections
+            </button>
+
+            <button className="secondary-button" onClick={handleApplyLearnedSuggestions}>
+              Apply learned suggestions
+            </button>
+
+            <button className="secondary-button" onClick={handleSaveCorrectionsToLearningMemory}>
+              Save corrections to learning memory
+            </button>
+
+            <button className="secondary-button" onClick={handleExportMlFeedback}>
+              Export ML feedback
+            </button>
+
+            <button className="secondary-button" onClick={handleTrainLightMl}>
+              Train light ML
+            </button>
+
+            <button className="secondary-button" onClick={handleApplyMlSuggestions}>
+              Apply ML army suggestions
             </button>
 
             <input
@@ -467,6 +636,19 @@ export default function EnemyTribeAnalysisScreen({
               </label>
             ) : null}
           </div>
+
+          <div className="field">
+            <span>Analysis mode</span>
+            <select
+              className="select-input"
+              value={analysisMode}
+              onChange={(event) => setAnalysisMode(event.target.value as AnalysisMode)}
+            >
+              <option value="fast">Fast — quickest first pass</option>
+              <option value="balanced">Balanced — retry only suspicious rows</option>
+              <option value="accurate">Accurate — heavier OCR and retries</option>
+            </select>
+          </div>
         </div>
 
         <div className="note-box compact-note-box">{t.enemyAnalysis.artifactNote}</div>
@@ -481,6 +663,7 @@ export default function EnemyTribeAnalysisScreen({
         ) : null}
 
         {error ? <div className="error-box">{error}</div> : null}
+      {statusMessage && !rows.length ? <div className="note-box">{statusMessage}</div> : null}
       </section>
 
       {rows.length ? (
@@ -520,6 +703,76 @@ export default function EnemyTribeAnalysisScreen({
               <span className="info-label">{t.enemyAnalysis.cavalry}</span>
               <strong>{counts.cavalry}</strong>
             </div>
+          </section>
+
+          <section className="card">
+            <div className="card-header">
+              <div>
+                <p className="eyebrow">Learning</p>
+                <h2>Learning memory and light ML</h2>
+                <p className="muted">
+                  Fast mode gives a cheaper first pass. Manual corrections can then be reused as learning memory,
+                  and the light ML model can be trained to improve future army-type suggestions.
+                </p>
+              </div>
+            </div>
+
+            <div className="top-grid">
+              <div className="info-box">
+                <span className="info-label">Current mode</span>
+                <strong>{analysisMode}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">Learning memory entries</span>
+                <strong>{learningSummary.totalEntries}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">Learned name patterns</span>
+                <strong>{learningSummary.learnedNamePatterns}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">Learned army patterns</span>
+                <strong>{learningSummary.learnedArmyPatterns}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">ML training examples</span>
+                <strong>{mlSummary.trainingExamples}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">ML feature count</span>
+                <strong>{mlSummary.featureCount}</strong>
+              </div>
+              <div className="info-box">
+                <span className="info-label">ML accuracy</span>
+                <strong>{mlSummary.trainingAccuracy !== undefined ? `${Math.round(mlSummary.trainingAccuracy * 100)}%` : "—"}</strong>
+              </div>
+            </div>
+
+            <div className="app-top-actions" style={{ marginTop: 16, flexWrap: "wrap" }}>
+              <button className="secondary-button" onClick={handleApplyLearnedSuggestions}>
+                Apply learned suggestions
+              </button>
+              <button className="secondary-button" onClick={handleSaveCorrectionsToLearningMemory}>
+                Save corrections to learning memory
+              </button>
+              <button className="secondary-button" onClick={handleExportMlFeedback}>
+                Export ML feedback
+              </button>
+              <button className="secondary-button" onClick={handleTrainLightMl}>
+                Train light ML
+              </button>
+              <button className="secondary-button" onClick={handleApplyMlSuggestions}>
+                Apply ML army suggestions
+              </button>
+              <button className="secondary-button" onClick={handleClearLearningMemory}>
+                Clear learning memory
+              </button>
+              <button className="secondary-button" onClick={handleClearMlModel}>
+                Clear ML model
+              </button>
+            </div>
+
+            {statusMessage ? <div className="note-box" style={{ marginTop: 16 }}>{statusMessage}</div> : null}
           </section>
 
           <section className="card">

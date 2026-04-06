@@ -25,6 +25,13 @@ export type AnalysisProgress = {
   step: string;
 };
 
+export type AnalysisMode = "fast" | "balanced" | "accurate";
+
+export type AnalyzeEnemyImagesOptions = {
+  mode?: AnalysisMode;
+  onProgress?: (progress: AnalysisProgress) => void;
+};
+
 export type ArtifactSlotAnalysis = {
   slot: ArtifactSlotKey;
   color: ArtifactColor;
@@ -518,10 +525,30 @@ function shouldRetryChiefNameBatch(name: string) {
   return false;
 }
 
+function resolveAnalyzeEnemyImagesOptions(
+  options?: AnalyzeEnemyImagesOptions | ((progress: AnalysisProgress) => void)
+): {
+  mode: AnalysisMode;
+  onProgress?: (progress: AnalysisProgress) => void;
+} {
+  if (typeof options === "function") {
+    return {
+      mode: "accurate",
+      onProgress: options,
+    };
+  }
+
+  return {
+    mode: options?.mode ?? "fast",
+    onProgress: options?.onProgress,
+  };
+}
+
 export async function analyzeEnemyImages(
   files: File[],
-  onProgress?: (progress: AnalysisProgress) => void
+  options?: AnalyzeEnemyImagesOptions | ((progress: AnalysisProgress) => void)
 ): Promise<EnemyAnalysisRow[]> {
+  const { mode, onProgress } = resolveAnalyzeEnemyImagesOptions(options);
   const rows: EnemyAnalysisRow[] = [];
 
   try {
@@ -533,7 +560,7 @@ export async function analyzeEnemyImages(
           current: index + 1,
           total: files.length,
           fileName: file.name,
-          step: "Loading screenshot",
+          step: `Loading screenshot (${mode})`,
         });
 
         const rootCanvas = await fileToCanvas(file);
@@ -561,15 +588,25 @@ export async function analyzeEnemyImages(
           analysisCanvas,
           layout.topInfoRect,
           layout.nameRect,
-          true
+          mode !== "accurate"
         );
 
-        if (shouldRetryChiefNameBatch(chiefName)) {
-          const retryLayout = await detectLayout(analysisCanvas);
+        const shouldRetryName =
+          mode === "accurate"
+            ? shouldRetryChiefNameBatch(chiefName)
+            : mode === "balanced"
+              ? chiefName === "Unknown"
+              : false;
+
+        let currentLayout = layout;
+
+        if (shouldRetryName) {
+          currentLayout = await detectLayout(analysisCanvas);
           const retriedChiefName = await extractChiefName(
             analysisCanvas,
-            retryLayout.topInfoRect,
-            retryLayout.nameRect
+            currentLayout.topInfoRect,
+            currentLayout.nameRect,
+            false
           );
 
           if (retriedChiefName !== "Unknown") {
@@ -584,31 +621,45 @@ export async function analyzeEnemyImages(
           step: "Reading might values",
         });
 
+        const initialMightMode: NumberReadMode =
+          mode === "accurate" ? "full" : "fast";
+
         let { individualMight, heroMight } = await extractMightPair(
           analysisCanvas,
-          layout.topInfoRect,
-          "full"
+          currentLayout.topInfoRect,
+          initialMightMode
         );
 
-        if (chiefName === "Unknown" || individualMight === 0) {
-          const retryLayout = await detectLayout(analysisCanvas);
+        const shouldRetryMight =
+          mode === "accurate"
+            ? chiefName === "Unknown" || individualMight === 0
+            : mode === "balanced"
+              ? chiefName === "Unknown" || individualMight === 0
+              : false;
+
+        if (shouldRetryMight) {
+          if (currentLayout === layout) {
+            currentLayout = await detectLayout(analysisCanvas);
+          }
+
           const retryName = await extractChiefName(
             analysisCanvas,
-            retryLayout.topInfoRect,
-            retryLayout.nameRect
+            currentLayout.topInfoRect,
+            currentLayout.nameRect,
+            false
           );
 
           const retryMight = await extractMightPair(
             analysisCanvas,
-            retryLayout.topInfoRect,
-            "full"
+            currentLayout.topInfoRect,
+            mode === "accurate" ? "full_with_psm6" : "full"
           );
 
           if (retryName !== "Unknown") {
             chiefName = retryName;
           }
 
-          if (retryMight.individualMight > individualMight) {
+          if (retryMight.individualMight >= individualMight) {
             individualMight = retryMight.individualMight;
             heroMight = retryMight.heroMight;
           }
@@ -621,7 +672,7 @@ export async function analyzeEnemyImages(
           step: "Analyzing artifacts",
         });
 
-        const slots = analyzeSlots(analysisCanvas, layout);
+        const slots = analyzeSlots(analysisCanvas, currentLayout);
 
         const armyScores = buildArmyScores(slots);
         const armyType = decideArmyType(armyScores, slots);
