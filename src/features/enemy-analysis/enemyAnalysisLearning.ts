@@ -155,6 +155,8 @@ export function getEnemyAnalysisLearningSummary(): EnemyAnalysisLearningSummary 
   };
 }
 
+
+
 export function clearEnemyAnalysisFeedbackMemory() {
   if (typeof window === "undefined") {
     return;
@@ -162,8 +164,6 @@ export function clearEnemyAnalysisFeedbackMemory() {
 
   window.localStorage.removeItem(LEARNING_STORAGE_KEY);
 }
-
-
 export function readEnemyAnalysisFeedbackMemory(): EnemyAnalysisFeedbackEntry[] {
   if (typeof window === "undefined") {
     return [];

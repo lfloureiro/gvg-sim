@@ -1,5 +1,4 @@
 import {
-  applyEnemyAnalysisOverride,
   type ArmyType,
   type ArtifactColor,
   type ArtifactSlotKey,
@@ -22,10 +21,6 @@ const SLOT_ORDER: ArtifactSlotKey[] = [
   "pants",
 ];
 const COLORS: ArtifactColor[] = ["grey", "green", "blue", "purple", "gold", "red"];
-const CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
-
-// type ConfidenceLabel = (typeof CONFIDENCE_LEVELS)[number];
-
 export type ArmyTypeMlModel = {
   version: 1;
   createdAt: string;
@@ -90,7 +85,7 @@ export function trainArmyTypeModel(
   }
 
   const featureTemplate = extractArmyTypeFeatures(
-    applyEnemyAnalysisOverride(entries[0].auto, entries[0].manual)
+    applyOverrideForMl(entries[0].auto, entries[0].manual)
   );
 
   const epochs = Math.max(4, Math.min(40, options?.epochs ?? 12));
@@ -306,21 +301,42 @@ export function extractArmyTypeFeatures(row: EnemyAnalysisRow): {
     vector.push((row.armyScores[label] ?? 0) / 300);
   }
 
-  for (const level of CONFIDENCE_LEVELS) {
-    featureNames.push(`confidence.${level}`);
-    vector.push(row.confidence === level ? 1 : 0);
-  }
-
   featureNames.push("individualMightLogNorm");
   vector.push(normalizeMight(row.individualMight));
 
   return { vector, featureNames };
 }
 
+
+function applyOverrideForMl(
+  row: EnemyAnalysisRow,
+  override?: EnemyAnalysisRowOverride
+): EnemyAnalysisRow {
+  if (!override) {
+    return row;
+  }
+
+  return {
+    ...row,
+    chiefName: override.chiefName ?? row.chiefName,
+    individualMight: override.individualMight ?? row.individualMight,
+    heroMight: override.heroMight ?? row.heroMight,
+    armyType: override.armyType ?? row.armyType,
+    slots: {
+      sword: { ...row.slots.sword, ...(override.slots?.sword ?? {}) },
+      shield: { ...row.slots.shield, ...(override.slots?.shield ?? {}) },
+      boots: { ...row.slots.boots, ...(override.slots?.boots ?? {}) },
+      chest: { ...row.slots.chest, ...(override.slots?.chest ?? {}) },
+      helmet: { ...row.slots.helmet, ...(override.slots?.helmet ?? {}) },
+      pants: { ...row.slots.pants, ...(override.slots?.pants ?? {}) },
+    },
+  };
+}
+
 function buildTrainingExamples(entries: EnemyAnalysisFeedbackEntry[]): ArmyTypeTrainingExample[] {
   return entries
     .map((entry) => {
-      const effective = applyEnemyAnalysisOverride(entry.auto, entry.manual);
+      const effective = applyOverrideForMl(entry.auto, entry.manual);
       return {
         features: extractArmyTypeFeatures(effective).vector,
         label: effective.armyType,
