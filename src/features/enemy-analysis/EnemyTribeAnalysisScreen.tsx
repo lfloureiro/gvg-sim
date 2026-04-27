@@ -1,3 +1,4 @@
+import { PHOENIX_MOTTO, PHOENIX_TITLE } from "../../version";
 import { useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { getTranslation } from "../../i18n";
 import type { Language } from "../../types";
@@ -507,7 +508,7 @@ export default function EnemyTribeAnalysisScreen({
               className="secondary-button"
               onClick={() => setShowAdvanced((value) => !value)}
             >
-              {showAdvanced ? "Hide debug / review / ML" : "Debug / review / ML"}
+              {showAdvanced ? "Hide debug panel" : "Show debug panel"}
             </button>
 
             <button
@@ -566,9 +567,9 @@ export default function EnemyTribeAnalysisScreen({
           </div>
 
           <div className="banner-watermark-block" aria-hidden="true">
-            <div className="banner-watermark-title">PHOENIX VERITAS</div>
+            <div className="banner-watermark-title">{PHOENIX_TITLE}</div>
             <div className="banner-watermark-motto">
-              FORGED IN FIRE, UNITED IN TRUTH.
+              {PHOENIX_MOTTO}
             </div>
           </div>
         </div>

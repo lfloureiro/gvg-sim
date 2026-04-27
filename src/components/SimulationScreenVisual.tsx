@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import BrandBanner from "./BrandBanner";
 import type { AppText } from "../i18n";
 import type {
   DayNumber,
@@ -670,6 +671,11 @@ export default function SimulationScreenVisual({
 
   return (
     <div className="stack" style={{ position: "relative" }}>
+      <BrandBanner
+        eyebrow={t.simulationVisual.eyebrow}
+        title={t.simulationVisual.title}
+        subtitle={t.simulationVisual.subtitle}
+      />
       <section className="card">
         <div className="card-header">
           <div>
@@ -728,7 +734,7 @@ export default function SimulationScreenVisual({
       <section className="card">
         <div className="card-header">
           <div>
-            <h2>Tribos</h2>
+            <h2>{t.common.tribes}</h2>
             <p className="phoenix-subtitle" style={{ marginTop: 4 }}>
               Homes sem tribo ficam esbatidos. O seletor de Order já fica pronto
               para a próxima fase.

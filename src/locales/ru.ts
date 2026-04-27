@@ -1,10 +1,16 @@
-﻿import type { AppText } from "./schema";
+import type { AppText } from "./schema";
 
 const ru: AppText = {
   common: {
     language: "Ð¯Ð·Ñ‹Ðº",
-    version: "Ð’ÐµÑ€ÑÐ¸Ñ",
-    noTribe: "â€” Ð½ÐµÑ‚ Ð¿Ð»ÐµÐ¼ÐµÐ½Ð¸ â€”",
+    version: "Version",
+    backToHome: "Back to home",
+    reset: "Reset",
+    switchToTableMode: "Switch to table mode",
+    switchToVisualMode: "Switch to visual mode",
+    tribes: "Tribes",
+    visualTribesHelp: "Homes without a tribe are faded. The Order selector is ready for the next phase.",
+    noTribe: "- no tribe -",
     back: "ÐÐ°Ð·Ð°Ð´",
     continue: "ÐŸÑ€Ð¾Ð´Ð¾Ð»Ð¶Ð¸Ñ‚ÑŒ",
     copyCurrentToSimulation: "Ð¡ÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ Ñ‚ÐµÐºÑƒÑ‰ÐµÐµ ÑÐ¾ÑÑ‚Ð¾ÑÐ½Ð¸Ðµ Ð² ÑÐ¸Ð¼ÑƒÐ»ÑÑ†Ð¸ÑŽ",

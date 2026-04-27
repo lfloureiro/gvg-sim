@@ -4,6 +4,12 @@ export type AppText = {
   common: {
     language: string;
     version: string;
+    backToHome: string;
+    reset: string;
+    switchToTableMode: string;
+    switchToVisualMode: string;
+    tribes: string;
+    visualTribesHelp: string;
     noTribe: string;
     back: string;
     continue: string;

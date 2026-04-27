@@ -1,10 +1,16 @@
-﻿import type { AppText } from "./schema";
+import type { AppText } from "./schema";
 
 const it: AppText = {
   common: {
     language: "Lingua",
-    version: "Versione",
-    noTribe: "â€” nessuna tribÃ¹ â€”",
+    version: "Version",
+    backToHome: "Back to home",
+    reset: "Reset",
+    switchToTableMode: "Switch to table mode",
+    switchToVisualMode: "Switch to visual mode",
+    tribes: "Tribes",
+    visualTribesHelp: "Homes without a tribe are faded. The Order selector is ready for the next phase.",
+    noTribe: "- no tribe -",
     back: "Indietro",
     continue: "Continua",
     copyCurrentToSimulation: "Copia lo stato attuale nella simulazione",
@@ -17,7 +23,7 @@ const it: AppText = {
     finalIfUnchanged: "Finale se invariato",
     finalSimulated: "Finale simulato",
     difference: "Differenza",
-    tribe: "TribÃ¹",
+    tribe: "Tribù",
     ruin: "Rovina",
     currentOwner: "Proprietario attuale",
     simulateIfChangedNow: "Simula se cambiato ora",
@@ -39,9 +45,9 @@ const it: AppText = {
   setup: {
     title: "Simulatore punteggio GvG",
     subtitle:
-      "La TribÃ¹ 1 Ã¨ sempre MF69. Scegli nomi, colori e punti attuali per le altre tribÃ¹.",
-    initialTribeData: "Dati iniziali delle tribÃ¹",
-    tribeName: "Nome della tribÃ¹",
+      "La Tribù 1 è sempre MF69. Scegli nomi, colori e punti attuali per le altre tribù.",
+    initialTribeData: "Dati iniziali delle tribù",
+    tribeName: "Nome della tribù",
   },
   simulation: {
     title: "Proiezione GvG fine Giorno 3",
@@ -50,9 +56,9 @@ const it: AppText = {
     day3Finish: "Fine Giorno 3",
     howToRead: "Come leggere la tabella finale:",
     noteLine1:
-      "Punti di prima conquista = bonus selezionato nella colonna della prima conquista che non Ã¨ ancora stato aggiunto ai punti attuali.",
+      "Punti di prima conquista = bonus selezionato nella colonna della prima conquista che non è ancora stato aggiunto ai punti attuali.",
     noteLine2:
-      "Punti / min = punti al minuto che ogni tribÃ¹ sta ricevendo in questo momento in base alla proprietÃ  simulata.",
+      "Punti / min = punti al minuto che ogni tribù sta ricevendo in questo momento in base alla proprietà  simulata.",
     noteLine3:
       "Finale simulato = punti attuali + bonus di prima conquista in sospeso + produzione futura fino alla fine del Giorno 3.",
     bastions: "Bastioni",
@@ -61,7 +67,7 @@ const it: AppText = {
     finalSummary: "Riepilogo finale",
     simulatedScoreEvolution: "Evoluzione simulata del punteggio",
     simulatedScoreEvolutionSubtitle:
-      "Crescita del punteggio da ora fino alla fine del Giorno 3, usando la proprietÃ  simulata.",
+      "Crescita del punteggio da ora fino alla fine del Giorno 3, usando la proprietà  simulata.",
   },
   home: {
     title: "MF69 Toolkit",
@@ -69,10 +75,10 @@ const it: AppText = {
     gvgEyebrow: "GvG",
     gvgTitle: "Simulatore punteggio GvG",
     gvgDescription:
-      "Configura le tribÃ¹, i punti attuali e la proprietÃ  delle rovine, poi proietta il risultato di fine giornata.",
+      "Configura le tribù, i punti attuali e la proprietà  delle rovine, poi proietta il risultato di fine giornata.",
     gvgButton: "Apri GvG",
     enemyEyebrow: "Analisi",
-    enemyTitle: "Analisi della tribÃ¹ nemica",
+    enemyTitle: "Analisi della tribù nemica",
     enemyDescription:
       "Scansiona screenshot, rileva il tipo principale di esercito e ordina i capi nemici per might.",
     enemyButton: "Apri analisi",
@@ -82,7 +88,7 @@ const it: AppText = {
     subtitle:
       "L'analizzatore legge il nome del capo, entrambi i valori di might e gli slot decisivi degli artefatti.",
     inputEyebrow: "Input",
-    inputTitle: "Selezione cartella e modalitÃ  di ordinamento",
+    inputTitle: "Selezione cartella e modalità  di ordinamento",
     inputSubtitle:
       "Seleziona una cartella con screenshot della stessa pagina del gioco.",
     screenshotFolder: "Cartella screenshot",
@@ -114,13 +120,13 @@ const it: AppText = {
     low: "Bassa",
   },
   errors: {
-    allTribesMustHaveAName: "Tutte le tribÃ¹ devono avere un nome.",
-    tribeNamesMustBeUnique: "I nomi delle tribÃ¹ devono essere unici.",
+    allTribesMustHaveAName: "Tutte le tribù devono avere un nome.",
+    tribeNamesMustBeUnique: "I nomi delle tribù devono essere unici.",
   },
   modeSelection: {
     eyebrow: "Simulatore GvG",
-    title: "Scegli modalitÃ ",
-    subtitle: "Scegli se vuoi lavorare in modalitÃ  tabella o in modalitÃ  visuale.",
+    title: "Scegli modalità ",
+    subtitle: "Scegli se vuoi lavorare in modalità  tabella o in modalità  visuale.",
     tableTitle: "ModalitÃ  Tabella",
     tableDescription: "Flusso attuale con configurazione in elenco e simulazione basata su tabelle.",
     visualTitle: "ModalitÃ  Visuale",
@@ -129,23 +135,23 @@ const it: AppText = {
   setupVisual: {
     title: "Configurazione Visuale",
     subtitle:
-      "In questa modalitÃ , il colore non viene scelto manualmente. SarÃ  derivato dalla posizione selezionata sulla mappa.",
+      "In questa modalità , il colore non viene scelto manualmente. Sarà  derivato dalla posizione selezionata sulla mappa.",
     nextStepTitle: "Prossimo passo:",
     nextStepBody:
-      "Sostituiremo questa configurazione con una versione basata sulla mappa, in cui assegni ogni tribÃ¹ direttamente a un home spot.",
-    backToModes: "Torna alle modalitÃ ",
+      "Sostituiremo questa configurazione con una versione basata sulla mappa, in cui assegni ogni tribù direttamente a un home spot.",
+    backToModes: "Torna alle modalità ",
   },
   simulationVisual: {
     eyebrow: "ModalitÃ  Visuale",
     title: "Simulazione Visuale",
     subtitle:
-      "Struttura di base pronta. Successivamente collegheremo la configurazione visuale alla mappa e poi alla proprietÃ  di rovine e passaggi.",
+      "Struttura di base pronta. Successivamente collegheremo la configurazione visuale alla mappa e poi alla proprietà  di rovine e passaggi.",
     calibrationOn: "Calibrazione",
     calibrationOff: "Esci dalla calibrazione",
     nextStepTitle: "Prossimo passo",
     nextStepBodyLine1: "Sostituiremo questo placeholder con:",
     nextStepBodyLine2:
-      "1. configurazione visuale con assegnazione delle tribÃ¹ agli home spot\n2. simulazione visuale con rovine, passaggi e proprietari in overlay",
+      "1. configurazione visuale con assegnazione delle tribù agli home spot\n2. simulazione visuale con rovine, passaggi e proprietari in overlay",
   },
   mapCalibration: {
     pointLabel: "Punto",

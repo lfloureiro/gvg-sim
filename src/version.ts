@@ -1,13 +1,13 @@
-﻿// Atualiza sÃ³ este ficheiro quando quiseres mudar a versÃ£o.
+// Atualiza só este ficheiro quando quiseres mudar a versão.
 // Regra simples:
-// - patch: correÃ§Ãµes pequenas ou ajustes visuais -> 3.4.1
+// - patch: correções pequenas ou ajustes visuais -> 3.4.1
 // - minor: rebrand / pequenas funcionalidades -> 3.5.0
-// - major: mudanÃ§a grande de lÃ³gica/estrutura -> 4.0.0
+// - major: mudança grande de lógica/estrutura -> 4.0.0
 
 export const APP_VERSION = {
   major: 3,
   minor: 4,
-  patch: 0,
+  patch: 1,
 } as const;
 
 export const APP_VERSION_STRING = `${APP_VERSION.major}.${APP_VERSION.minor}.${APP_VERSION.patch}`;

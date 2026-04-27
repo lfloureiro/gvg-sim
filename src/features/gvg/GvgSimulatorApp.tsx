@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_TRIBE_COLOR_SCHEMES,
   TRIBE_COUNT,
@@ -608,13 +608,13 @@ function handleResetSimulation() {
     const activeNames = enabledIndexes.map((index) => cleanedNames[index]);
 
     if (activeNames.some((name) => !name)) {
-      setSetupError("Todas as tribos ativas tÃªm de ter nome.");
+      setSetupError(t.errors.allTribesMustHaveAName);
       return;
     }
 
     const lowered = activeNames.map((name) => name.toLocaleLowerCase());
     if (new Set(lowered).size !== lowered.length) {
-      setSetupError("Os nomes das tribos ativas tÃªm de ser Ãºnicos.");
+      setSetupError(t.errors.tribeNamesMustBeUnique);
       return;
     }
 
@@ -639,7 +639,7 @@ function handleResetSimulation() {
         {onReturnHome ? (
           <div className="app-top-actions">
             <button className="secondary-button" onClick={onReturnHome}>
-              â† Back to home
+              ← {t.common.back}
             </button>
           </div>
         ) : null}
