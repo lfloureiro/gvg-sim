@@ -1,5 +1,4 @@
-import type { ArmyType, Confidence, EnemyAnalysisRow, EnemyAnalysisRowOverride } from "./analysis";
-import {
+﻿import type { ArmyType, EnemyAnalysisRow, EnemyAnalysisRowOverride } from "./analysis";import {
   readEnemyAnalysisFeedbackMemory,
   type EnemyAnalysisFeedbackEntry,
 } from "./enemyAnalysisLearning";
@@ -8,8 +7,6 @@ const MODEL_STORAGE_KEY = "phoenix-veritas-enemy-analysis-might-ml-model-v1";
 const CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
 const ARMY_TYPES: ArmyType[] = ["archer", "berserker", "cavalry"];
 const MAX_CANDIDATES = 18;
-
-type ConfidenceLabel = (typeof CONFIDENCE_LEVELS)[number];
 
 type MightTransformId =
   | "identity"
@@ -683,3 +680,4 @@ function isMightMlModel(value: unknown): value is MightMlModel {
     typeof candidate.bias === "number"
   );
 }
+

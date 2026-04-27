@@ -1,9 +1,10 @@
-import type { DayNumber, RuinDefinition, RuinType } from "./types";
+﻿import type { DayNumber, RuinDefinition, RuinType } from "./types";
 
 export const TRIBE_COUNT = 12;
 
 export const DEFAULT_TRIBE_COLOR_SCHEMES = [
-  { primary: "#e53935", secondary: "#ffb300" },
+  { primary: "#b91c1c", secondary: "#f8fafc" }, // MF69 - red / white
+  { primary: "#0f766e", secondary: "#99f6e4" }, // teal / mint
   { primary: "#1e88e5", secondary: "#80d8ff" },
   { primary: "#43a047", secondary: "#d4e157" },
   { primary: "#8e24aa", secondary: "#fdd835" },
@@ -14,7 +15,6 @@ export const DEFAULT_TRIBE_COLOR_SCHEMES = [
   { primary: "#7cb342", secondary: "#fff59d" },
   { primary: "#546e7a", secondary: "#ffab91" },
   { primary: "#5e35b1", secondary: "#a5d6a7" },
-  { primary: "#00acc1", secondary: "#ce93d8" },
 ];
 
 export const RUIN_DEFINITIONS: RuinDefinition[] = [

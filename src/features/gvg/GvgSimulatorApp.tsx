@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_TRIBE_COLOR_SCHEMES,
   TRIBE_COUNT,
@@ -24,7 +24,7 @@ import ModeSelectionScreen from "./ModeSelectionScreen";
 import type { SimulatorMode } from "./types";
 import { HOME_NODES, PASS_NODES } from "./data/mapLayout";
 
-const STORAGE_KEY = "gvg-sim-state-v12";
+const STORAGE_KEY = "gvg-sim-state-v13-mf69";
 
 type PersistedState = {
   mode: SimulatorMode | null;
@@ -219,7 +219,7 @@ function createDefaultState(): PersistedState {
     mode: null,
     configured: false,
     tribeNames: Array.from({ length: TRIBE_COUNT }, (_, index) =>
-      index === 0 ? "Phoenix Veritas" : `Tribo ${index + 1}`
+      index === 0 ? "MF69" : `Tribo ${index + 1}`
     ),
     tribeEnabled,
     tribeOrders: Array.from({ length: TRIBE_COUNT }, () => null),
@@ -608,13 +608,13 @@ function handleResetSimulation() {
     const activeNames = enabledIndexes.map((index) => cleanedNames[index]);
 
     if (activeNames.some((name) => !name)) {
-      setSetupError("Todas as tribos ativas têm de ter nome.");
+      setSetupError("Todas as tribos ativas tÃªm de ter nome.");
       return;
     }
 
     const lowered = activeNames.map((name) => name.toLocaleLowerCase());
     if (new Set(lowered).size !== lowered.length) {
-      setSetupError("Os nomes das tribos ativas têm de ser únicos.");
+      setSetupError("Os nomes das tribos ativas tÃªm de ser Ãºnicos.");
       return;
     }
 
@@ -639,7 +639,7 @@ function handleResetSimulation() {
         {onReturnHome ? (
           <div className="app-top-actions">
             <button className="secondary-button" onClick={onReturnHome}>
-              ← Back to home
+              â† Back to home
             </button>
           </div>
         ) : null}
@@ -696,3 +696,6 @@ function handleResetSimulation() {
     </main>
   );
 }
+
+
+

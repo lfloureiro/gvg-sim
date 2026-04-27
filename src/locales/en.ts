@@ -1,10 +1,10 @@
-import type { AppText } from "./schema";
+﻿import type { AppText } from "./schema";
 
 const en: AppText = {
   common: {
     language: "Language",
     version: "Version",
-    noTribe: "— no tribe —",
+    noTribe: "â€” no tribe â€”",
     back: "Back",
     continue: "Continue",
     copyCurrentToSimulation: "Copy current to simulation",
@@ -39,7 +39,7 @@ const en: AppText = {
   setup: {
     title: "GvG Score Simulator",
     subtitle:
-      "Tribe 1 is always Phoenix Veritas. Choose names, colours and current points for the remaining tribes.",
+      "Tribe 1 is always MF69. Choose names, colours and current points for the remaining tribes.",
     initialTribeData: "Initial tribe data",
     tribeName: "Tribe name",
   },
@@ -64,7 +64,7 @@ const en: AppText = {
       "Score growth from now until the end of Day 3, using the simulated ownership.",
   },
   home: {
-    title: "Phoenix Veritas toolkit",
+    title: "MF69 toolkit",
     subtitle: "Choose a tool and keep the same language across the whole app.",
     gvgEyebrow: "GvG",
     gvgTitle: "GvG score simulator",
@@ -155,3 +155,4 @@ const en: AppText = {
 };
 
 export default en;
+

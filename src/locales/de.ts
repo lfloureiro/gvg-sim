@@ -1,11 +1,11 @@
-import type { AppText } from "./schema";
+﻿import type { AppText } from "./schema";
 
 const de: AppText = {
   common: {
     language: "Sprache",
     version: "Version",
-    noTribe: "— kein Stamm —",
-    back: "Zurück",
+    noTribe: "â€” kein Stamm â€”",
+    back: "ZurÃ¼ck",
     continue: "Weiter",
     copyCurrentToSimulation: "Aktuellen Zustand in Simulation kopieren",
     currentDay: "Aktueller Tag",
@@ -14,13 +14,13 @@ const de: AppText = {
     currentPoints: "Aktuelle Punkte",
     firstCapture: "Erste Eroberung",
     pointsPerMinute: "Punkte / Min",
-    finalIfUnchanged: "Final bei unverändertem Zustand",
+    finalIfUnchanged: "Final bei unverÃ¤ndertem Zustand",
     finalSimulated: "Simuliertes Finale",
     difference: "Differenz",
     tribe: "Stamm",
     ruin: "Ruine",
     currentOwner: "Aktueller Besitzer",
-    simulateIfChangedNow: "Simulieren, wenn jetzt geändert",
+    simulateIfChangedNow: "Simulieren, wenn jetzt geÃ¤ndert",
     day1: "Tag 1",
     day2: "Tag 2",
     day3: "Tag 3",
@@ -28,7 +28,7 @@ const de: AppText = {
     colours: {
       red: "Rot",
       blue: "Blau",
-      green: "Grün",
+      green: "GrÃ¼n",
       yellow: "Gelb",
       purple: "Lila",
       orange: "Orange",
@@ -39,24 +39,24 @@ const de: AppText = {
   setup: {
     title: "GvG-Punktesimulator",
     subtitle:
-      "Stamm 1 ist immer Phoenix Veritas. Wähle Namen, Farben und aktuelle Punkte für die übrigen Stämme.",
-    initialTribeData: "Anfängliche Stammdaten",
+      "Stamm 1 ist immer MF69. WÃ¤hle Namen, Farben und aktuelle Punkte fÃ¼r die Ã¼brigen StÃ¤mme.",
+    initialTribeData: "AnfÃ¤ngliche Stammdaten",
     tribeName: "Stammesname",
   },
   simulation: {
-    title: "GvG-Projektion für das Ende von Tag 3",
-    subtitle: "Aktueller Zustand versus simulierter Zustand, falls Änderungen jetzt passieren.",
+    title: "GvG-Projektion fÃ¼r das Ende von Tag 3",
+    subtitle: "Aktueller Zustand versus simulierter Zustand, falls Ã„nderungen jetzt passieren.",
     eyebrow: "Ruinen und Endprojektion",
     day3Finish: "Ende von Tag 3",
     howToRead: "So liest du die Endtabelle:",
     noteLine1:
-      "Punkte für die erste Eroberung = Bonus aus der Spalte für die erste Eroberung, der den aktuellen Punkten noch nicht hinzugefügt wurde.",
+      "Punkte fÃ¼r die erste Eroberung = Bonus aus der Spalte fÃ¼r die erste Eroberung, der den aktuellen Punkten noch nicht hinzugefÃ¼gt wurde.",
     noteLine2:
-      "Punkte / Min = Punkte pro Minute, die jeder Stamm aktuell durch den simulierten Besitz erhält.",
+      "Punkte / Min = Punkte pro Minute, die jeder Stamm aktuell durch den simulierten Besitz erhÃ¤lt.",
     noteLine3:
-      "Simuliertes Finale = aktuelle Punkte + ausstehender Bonus für die erste Eroberung + zukünftige Produktion bis zum Ende von Tag 3.",
+      "Simuliertes Finale = aktuelle Punkte + ausstehender Bonus fÃ¼r die erste Eroberung + zukÃ¼nftige Produktion bis zum Ende von Tag 3.",
     bastions: "Bastionen",
-    valkyries: "Walküren",
+    valkyries: "WalkÃ¼ren",
     temple: "Tempel",
     finalSummary: "Endzusammenfassung",
     simulatedScoreEvolution: "Simulierte Punkteentwicklung",
@@ -64,18 +64,18 @@ const de: AppText = {
       "Punktwachstum von jetzt bis zum Ende von Tag 3 unter Verwendung des simulierten Besitzes.",
   },
   home: {
-    title: "Phoenix Veritas Toolkit",
-    subtitle: "Wähle ein Werkzeug und behalte dieselbe Sprache in der ganzen App.",
+    title: "MF69 Toolkit",
+    subtitle: "WÃ¤hle ein Werkzeug und behalte dieselbe Sprache in der ganzen App.",
     gvgEyebrow: "GvG",
     gvgTitle: "GvG-Punktesimulator",
     gvgDescription:
-      "Konfiguriere die Stämme, aktuellen Punkte und den Besitz der Ruinen und projiziere dann das Ergebnis am Tagesende.",
-    gvgButton: "GvG öffnen",
+      "Konfiguriere die StÃ¤mme, aktuellen Punkte und den Besitz der Ruinen und projiziere dann das Ergebnis am Tagesende.",
+    gvgButton: "GvG Ã¶ffnen",
     enemyEyebrow: "Analyse",
     enemyTitle: "Analyse des gegnerischen Stammes",
     enemyDescription:
       "Scanne Screenshots, erkenne den Hauptarmee-Typ und sortiere gegnerische Chiefs nach Might.",
-    enemyButton: "Analyse öffnen",
+    enemyButton: "Analyse Ã¶ffnen",
   },
   enemyAnalysis: {
     title: "Einen Ordner mit Fate-War-Screenshots scannen",
@@ -84,20 +84,20 @@ const de: AppText = {
     inputEyebrow: "Eingabe",
     inputTitle: "Ordnerauswahl und Sortiermodus",
     inputSubtitle:
-      "Wähle einen Ordner mit Screenshots von derselben Spielseite aus.",
+      "WÃ¤hle einen Ordner mit Screenshots von derselben Spielseite aus.",
     screenshotFolder: "Screenshot-Ordner",
-    chooseFolder: "Hier klicken, um den Screenshot-Ordner auszuwählen",
+    chooseFolder: "Hier klicken, um den Screenshot-Ordner auszuwÃ¤hlen",
     chooseFolderHelp:
-      "Wähle den Ordner mit den Fate-War-Screenshots, die du analysieren möchtest. Die App liest die Dateien nur.",
-    selectedFolder: "Ausgewählter Ordner",
-    noFolderSelected: "Noch kein Ordner ausgewählt",
+      "WÃ¤hle den Ordner mit den Fate-War-Screenshots, die du analysieren mÃ¶chtest. Die App liest die Dateien nur.",
+    selectedFolder: "AusgewÃ¤hlter Ordner",
+    noFolderSelected: "Noch kein Ordner ausgewÃ¤hlt",
     orderBy: "Gegner sortieren nach",
     artifactNote:
-      "Artefaktstufen werden nur aus der Farbe abgeleitet: grau 0, grün 1, blau 2, violett 3, gold 4, rot 5. Runenfarben werden nur als Tie-Breaker verwendet.",
+      "Artefaktstufen werden nur aus der Farbe abgeleitet: grau 0, grÃ¼n 1, blau 2, violett 3, gold 4, rot 5. Runenfarben werden nur als Tie-Breaker verwendet.",
     analyzing: "Analysiere",
     step: "Schritt",
     screenshotsAnalyzed: "Analysierte Screenshots",
-    archers: "Bogenschützen",
+    archers: "BogenschÃ¼tzen",
     berserkers: "Berserker",
     cavalry: "Kavallerie",
     results: "Ergebnisse",
@@ -108,19 +108,19 @@ const de: AppText = {
     heroMight: "Helden-Might",
     primaryBuild: "Haupt-Build",
     confidence: "Sicherheit",
-    openFolderError: "Der ausgewählte Ordner konnte nicht geöffnet werden.",
+    openFolderError: "Der ausgewÃ¤hlte Ordner konnte nicht geÃ¶ffnet werden.",
     high: "Hoch",
     medium: "Mittel",
     low: "Niedrig",
   },
   errors: {
-    allTribesMustHaveAName: "Alle Stämme müssen einen Namen haben.",
-    tribeNamesMustBeUnique: "Stammesnamen müssen eindeutig sein.",
+    allTribesMustHaveAName: "Alle StÃ¤mme mÃ¼ssen einen Namen haben.",
+    tribeNamesMustBeUnique: "Stammesnamen mÃ¼ssen eindeutig sein.",
   },
   modeSelection: {
     eyebrow: "GvG-Simulator",
-    title: "Modus wählen",
-    subtitle: "Wähle, ob du im Tabellenmodus oder im visuellen Modus arbeiten möchtest.",
+    title: "Modus wÃ¤hlen",
+    subtitle: "WÃ¤hle, ob du im Tabellenmodus oder im visuellen Modus arbeiten mÃ¶chtest.",
     tableTitle: "Tabellenmodus",
     tableDescription: "Aktueller Ablauf mit Listen-Setup und tabellenbasierter Simulation.",
     visualTitle: "Visueller Modus",
@@ -129,31 +129,32 @@ const de: AppText = {
   setupVisual: {
     title: "Visuelles Setup",
     subtitle:
-      "In diesem Modus wird die Farbe nicht manuell gewählt. Sie wird aus der auf der Karte gewählten Position abgeleitet.",
-    nextStepTitle: "Nächster Schritt:",
+      "In diesem Modus wird die Farbe nicht manuell gewÃ¤hlt. Sie wird aus der auf der Karte gewÃ¤hlten Position abgeleitet.",
+    nextStepTitle: "NÃ¤chster Schritt:",
     nextStepBody:
       "Wir werden dieses Setup durch eine kartenbasierte Version ersetzen, in der du jeden Stamm direkt einem Home-Spot zuweist.",
-    backToModes: "Zurück zu den Modi",
+    backToModes: "ZurÃ¼ck zu den Modi",
   },
   simulationVisual: {
     eyebrow: "Visueller Modus",
     title: "Visuelle Simulation",
     subtitle:
-      "Grundstruktur bereit. Als Nächstes verbinden wir das visuelle Setup mit der Karte und dann mit dem Besitz von Ruinen und Pässen.",
+      "Grundstruktur bereit. Als NÃ¤chstes verbinden wir das visuelle Setup mit der Karte und dann mit dem Besitz von Ruinen und PÃ¤ssen.",
     calibrationOn: "Kalibrierung",
     calibrationOff: "Kalibrierung beenden",
-    nextStepTitle: "Nächster Schritt",
+    nextStepTitle: "NÃ¤chster Schritt",
     nextStepBodyLine1: "Wir werden diesen Platzhalter ersetzen durch:",
     nextStepBodyLine2:
-      "1. visuelles Setup mit Stammzuweisung auf Home-Spots\n2. visuelle Simulation mit Ruinen, Pässen und Besitzern als Overlay",
+      "1. visuelles Setup mit Stammzuweisung auf Home-Spots\n2. visuelle Simulation mit Ruinen, PÃ¤ssen und Besitzern als Overlay",
   },
   mapCalibration: {
     pointLabel: "Punkt",
     copyCoordinates: "Koordinaten kopieren",
-    reset: "Zurücksetzen",
+    reset: "ZurÃ¼cksetzen",
     help:
-      "Klicke auf einen Punkt, um ihn auszuwählen. Verwende die Pfeiltasten, um ihn um 0.2% zu verschieben. Verwende Umschalt + Pfeile für 1%.",
+      "Klicke auf einen Punkt, um ihn auszuwÃ¤hlen. Verwende die Pfeiltasten, um ihn um 0.2% zu verschieben. Verwende Umschalt + Pfeile fÃ¼r 1%.",
   },
 };
 
 export default de;
+
