@@ -695,14 +695,14 @@ export default function SimulationScreenVisual({
             </button>
 
             <button className="secondary-button" onClick={onResetSimulation}>
-              Reset
+              {t.common.reset}
             </button>
 
             <button
               className="secondary-button"
               onClick={onSwitchToTableMode}
             >
-              Mudar para modo tabela
+              {t.common.switchToTableMode}
             </button>
           </div>
         </div>

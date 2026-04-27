@@ -407,14 +407,14 @@ export default function SimulationScreen({
 
           <div className="inline-actions">
             <button className="secondary-button" onClick={onResetSimulation}>
-              Reset
+              {t.common.reset}
             </button>
 
             <button
               className="secondary-button"
               onClick={onSwitchToVisualMode}
             >
-              Mudar para modo visual
+              {t.common.switchToVisualMode}
             </button>
           </div>
         </div>
