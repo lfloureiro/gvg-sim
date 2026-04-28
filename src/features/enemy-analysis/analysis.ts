@@ -207,7 +207,13 @@ export type DebugAnalysisResult = {
   timings?: DebugTimings;
 };
 
-const OCR_LANGUAGE = "eng";
+const OCR_LANGUAGE = "eng+rus";
+const LATIN_NAME_WHITELIST =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€";
+const CYRILLIC_NAME_WHITELIST =
+  "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ" +
+  "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+const NAME_OCR_WHITELIST = `${LATIN_NAME_WHITELIST}${CYRILLIC_NAME_WHITELIST}`;
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -996,8 +1002,7 @@ async function findNameRectByOCRFallback(
 
   for (const variant of variants) {
     const ocr = await recognizeDetailed(variant, {
-      whitelist:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
+      whitelist: NAME_OCR_WHITELIST,
       pageSegMode: "7",
     });
 
@@ -1043,7 +1048,7 @@ function isLikelyChiefNameToken(value: string) {
     return false;
   }
 
-  if (!/[A-Za-z]/.test(value)) {
+  if (!/[\p{L}A-Za-z]/u.test(value)) {
     return false;
   }
 
@@ -1658,13 +1663,11 @@ async function extractChiefName(
 
       const [strictOcr, softOcr] = await Promise.all([
         recognizeDetailed(strictPrepared, {
-          whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
+          whitelist: NAME_OCR_WHITELIST,
           pageSegMode: "7",
         }),
         recognizeDetailed(softPrepared, {
-          whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
+          whitelist: NAME_OCR_WHITELIST,
           pageSegMode: "7",
         }),
       ]);
@@ -1694,13 +1697,11 @@ async function extractChiefName(
 
     const [strictOcr, softOcr] = await Promise.all([
       recognizeDetailed(strictPrepared, {
-        whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
+        whitelist: NAME_OCR_WHITELIST,
         pageSegMode: "7",
       }),
       recognizeDetailed(softPrepared, {
-        whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.@€",
+        whitelist: NAME_OCR_WHITELIST,
         pageSegMode: "7",
       }),
     ]);
@@ -1959,8 +1960,61 @@ function chooseBestChiefName(candidates: NameCandidate[]): string {
     }
   }
 
-  return best;
+  return preferMoreCompleteChiefName(best, aggregated);
 }
+function preferMoreCompleteChiefName(
+  best: string,
+  aggregated: Map<string, { totalWeight: number; hits: number }>
+) {
+  const bestEntry = aggregated.get(best);
+
+  if (!bestEntry || best === "Unknown") {
+    return best;
+  }
+
+  const bestLower = best.toLowerCase();
+  let selected = best;
+  let selectedScore =
+    bestEntry.totalWeight * 100 + bestEntry.hits * 14 + scoreNameCandidate(best);
+
+  for (const [value, entry] of aggregated.entries()) {
+    if (value === best || value.length <= selected.length) {
+      continue;
+    }
+
+    const valueLower = value.toLowerCase();
+    const isCompletion =
+      valueLower.startsWith(bestLower) && value.length <= best.length + 3;
+
+    if (!isCompletion) {
+      continue;
+    }
+
+    const suffix = value.slice(best.length);
+
+    if (isLikelyShortNoiseChunk(suffix)) {
+      continue;
+    }
+
+    const valueScore =
+      entry.totalWeight * 100 +
+      entry.hits * 14 +
+      scoreNameCandidate(value) +
+      (value.length - best.length) * 9;
+
+    const hasEnoughSupport =
+      entry.totalWeight >= Math.max(0.65, bestEntry.totalWeight * 0.22) ||
+      entry.hits >= 2;
+
+    if (hasEnoughSupport && valueScore > selectedScore * 0.58) {
+      selected = value;
+      selectedScore = valueScore;
+    }
+  }
+
+  return selected;
+}
+
 
 function commonPrefixLength(left: string, right: string) {
   const max = Math.min(left.length, right.length);
@@ -4291,10 +4345,12 @@ function scoreNameCandidate(name: string) {
     return -1;
   }
 
-  const letters = (name.match(/[A-Za-z]/g) ?? []).length;
+  const letters = (name.match(/[\p{L}A-Za-z]/gu) ?? []).length;
+  const latinLetters = (name.match(/[A-Za-z]/g) ?? []).length;
+  const cyrillicLetters = (name.match(/[А-Яа-яЁё]/g) ?? []).length;
   const digits = (name.match(/\d/g) ?? []).length;
-  const lowers = (name.match(/[a-z]/g) ?? []).length;
-  const uppers = (name.match(/[A-Z]/g) ?? []).length;
+  const lowers = (name.match(/[a-zа-яё]/g) ?? []).length;
+  const uppers = (name.match(/[A-ZА-ЯЁ]/g) ?? []).length;
   const length = name.length;
 
   let score = letters * 5 + digits * 1.5 + length;
@@ -4304,7 +4360,9 @@ function scoreNameCandidate(name: string) {
   if (digits > 4) score -= 18;
   if (letters < 3) score -= 28;
   if (uppers >= 1 && lowers >= 1) score += 8;
-  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(name)) score += 10;
+  if (/^[\p{L}A-Za-z][\p{L}A-Za-z0-9_-]*$/u.test(name)) score += 10;
+  if (cyrillicLetters > 0 && latinLetters === 0) score += 18;
+  if (cyrillicLetters > 0 && latinLetters > 0) score -= 20;
   if (/(.)\1\1/i.test(name)) score -= 18;
   if (/[_-]{2,}/.test(name)) score -= 18;
 
