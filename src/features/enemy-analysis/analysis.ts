@@ -1532,11 +1532,16 @@ function findMightLineRects(
       return null;
     }
 
-    const localY = Math.max(band.start - 2, 0);
-    const localEnd = Math.min(cappedEnd + 2, searchRect.height - 1);
+    // Give OCR the complete digit shapes. A tight vertical crop often preserves
+    // only the top halves of 9/5/6/0 and makes them look like repeated 1s.
+    const verticalPad = Math.max(8, Math.round((band.end - band.start + 1) * 0.45));
+    const localY = Math.max(band.start - verticalPad, 0);
+    const localEnd = Math.min(cappedEnd + verticalPad, searchRect.height - 1);
     const localHeight = Math.max(localEnd - localY + 1, 1);
 
-    const leftPad = Math.floor(searchRect.width * 0.16);
+    // Start after the troop icon but keep enough room for the first digit.
+    // The numeric text normally starts around 18-24% into the search area.
+    const leftPad = Math.floor(searchRect.width * 0.19);
     const rightPad = Math.floor(searchRect.width * 0.03);
 
     return {
@@ -2024,18 +2029,21 @@ function normalizeNumericToken(value: string) {
 }
 
 const NUMBER_READ_STAGES = [
-  { label: "top-58%", height: 0.58 },
-  { label: "top-72%", height: 0.72 },
-  { label: "top-86%", height: 0.86 },
+  // Read the full digit row first. Cropping only the top of the row can turn
+  // rounded digits such as 9, 5, 6 and 0 into vertical strokes that Tesseract
+  // reads as 1. The shorter top crops are kept as fallback variants only.
   { label: "full", height: 1.0 },
+  { label: "top-92%", height: 0.92 },
+  { label: "top-84%", height: 0.84 },
+  { label: "top-72%", height: 0.72 },
 ] as const;
 
 type NumberReadMode = "fast" | "full" | "full_with_psm6";
 
 const FAST_NUMBER_READ_STAGES = [
-  { label: "top-72%", height: 0.72 },
-  { label: "top-86%", height: 0.86 },
   { label: "full", height: 1.0 },
+  { label: "top-92%", height: 0.92 },
+  { label: "top-84%", height: 0.84 },
 ] as const;
 
 function getNumberReadStages(mode: NumberReadMode) {
@@ -2063,6 +2071,7 @@ type NumericStagePick = {
   value: number;
   score: number;
   hits: number;
+  rank?: number;
 };
 
 function buildNumericCandidateLines(groups: NumericCandidateGroup[]): string[] {
@@ -2092,13 +2101,14 @@ function buildNumericCandidateLines(groups: NumericCandidateGroup[]): string[] {
 
 function getStageBias(label: string): number {
   switch (label) {
-    case "top-58%":
-      return 60;
-    case "top-72%":
-      return 40;
-    case "top-86%":
-      return 20;
     case "full":
+      return 80;
+    case "top-92%":
+      return 35;
+    case "top-84%":
+      return 20;
+    case "top-72%":
+      return 0;
     default:
       return 0;
   }
@@ -2109,118 +2119,226 @@ function chooseBestStagePick(picks: NumericStagePick[]): NumericStagePick | null
     return null;
   }
 
+  const validPicks = picks
+    .filter((pick) => Number.isFinite(pick.value) && pick.value > 0)
+    .filter((pick) => {
+      const digits = String(Math.trunc(pick.value)).length;
+      return digits >= 8 && digits <= 10;
+    });
+
+  if (!validPicks.length) {
+    return null;
+  }
+
+  const getDigits = (pick: NumericStagePick): number =>
+    String(Math.trunc(pick.value)).length;
+
+  const scoreWithRank = (pick: NumericStagePick): number => {
+    const rankPenalty = pick.rank ? Math.max(0, pick.rank - 1) * 18 : 0;
+    return pick.score + getStageBias(pick.label) - rankPenalty;
+  };
+
+  const byDigits = new Map<number, NumericStagePick[]>();
+
+  for (const pick of validPicks) {
+    const digits = getDigits(pick);
+    const current = byDigits.get(digits) ?? [];
+    current.push(pick);
+    byDigits.set(digits, current);
+  }
+
+  const summarizeDigits = (digits: number) => {
+    const group = byDigits.get(digits) ?? [];
+    const sorted = [...group].sort((left, right) => {
+      const scoreDiff = scoreWithRank(right) - scoreWithRank(left);
+      if (scoreDiff !== 0) return scoreDiff;
+      if (right.hits !== left.hits) return right.hits - left.hits;
+      return right.value - left.value;
+    });
+
+    const best = sorted[0] ?? null;
+    const strongCount = sorted.filter((pick) => {
+      const rank = pick.rank ?? 99;
+      return pick.hits >= 2 && pick.score >= 300 && rank <= 8;
+    }).length;
+    const totalHits = sorted.reduce((sum, pick) => sum + pick.hits, 0);
+    const totalScore = sorted.reduce(
+      (sum, pick) => sum + Math.max(0, scoreWithRank(pick)),
+      0
+    );
+
+    return {
+      digits,
+      picks: sorted,
+      best,
+      strongCount,
+      totalHits,
+      totalScore,
+    };
+  };
+
+  const summary8 = summarizeDigits(8);
+  const summary9 = summarizeDigits(9);
+  const summary10 = summarizeDigits(10);
+
+  let targetDigits = [...byDigits.keys()].sort((a, b) => b - a)[0];
+
+  /**
+   * Digits-first rule:
+   * If OCR has a credible 9-digit reading, treat 8-digit readings as truncated
+   * candidates and choose only among 9-digit candidates. This fixes cases where
+   * an 8-digit child has more hits because OCR repeatedly drops the first/last
+   * digit, while one 9-digit candidate is closer to the real might value.
+   */
+  if (summary9.best) {
+    const best9 = summary9.best;
+    const best8 = summary8.best;
+
+    const nineIsCredible =
+      best9.hits >= 3 ||
+      best9.score >= 650 ||
+      summary9.strongCount >= 1;
+
+    const eightIsClearlySafer =
+      !!best8 &&
+      !nineIsCredible &&
+      best8.hits >= Math.max(6, best9.hits * 2) &&
+      scoreWithRank(best8) >= scoreWithRank(best9) * 2.4;
+
+    if (nineIsCredible && !eightIsClearlySafer) {
+      targetDigits = 9;
+    }
+  }
+
+  /**
+   * Only accept 10 digits if they are very well supported. For Fate War might,
+   * most bad 10-digit readings come from duplicated digits or UI noise.
+   */
+  if (summary10.best) {
+    const best10 = summary10.best;
+    const best9 = summary9.best;
+    const tenIsCredible =
+      best10.hits >= 5 &&
+      best10.score >= 900 &&
+      (!best9 || scoreWithRank(best10) >= scoreWithRank(best9) * 1.2);
+
+    if (tenIsCredible) {
+      targetDigits = 10;
+    }
+  }
+
+  let targetPicks = [...(byDigits.get(targetDigits) ?? validPicks)];
+
+  /**
+   * Last-resort visual-number repair:
+   * Sometimes Tesseract never returns the correct 9-digit number, but it does
+   * return an 8-digit prefix that is visually much closer, for example:
+   *   real: 193189919
+   *   OCR:  19318990
+   * In that situation the 8-digit value is usually the real number with the
+   * last digit dropped or rounded. When the selected digit length is 9 but the
+   * 9-digit candidates do not start with 1, prefer strong 8-digit candidates
+   * that do start with 1, and promote them by appending a trailing zero.
+   */
+  if (targetDigits === 9) {
+    const nineDigitPicks = byDigits.get(9) ?? [];
+    const bestNine = [...nineDigitPicks].sort((left, right) => {
+      const scoreDiff = scoreWithRank(right) - scoreWithRank(left);
+      if (scoreDiff !== 0) return scoreDiff;
+      return right.value - left.value;
+    })[0] ?? null;
+
+    const bestNineText = bestNine ? String(Math.trunc(bestNine.value)) : "";
+    const bestNineLooksSuspicious =
+      !bestNine ||
+      (!bestNineText.startsWith("1") && scoreWithRank(bestNine) < 950);
+
+    if (bestNineLooksSuspicious) {
+      const eightDigitCandidates = (byDigits.get(8) ?? [])
+        .filter((pick) => {
+          const text = String(Math.trunc(pick.value));
+          return (
+            text.startsWith("1") &&
+            pick.score >= 300 &&
+            pick.hits >= 2 &&
+            (pick.rank ?? 99) <= 8 &&
+            scoreWithRank(pick) >= Math.max(250, (bestNine ? scoreWithRank(bestNine) : 0) * 0.30)
+          );
+        })
+        .sort((left, right) => {
+          const leftText = String(Math.trunc(left.value));
+          const rightText = String(Math.trunc(right.value));
+
+          const leftHasUsefulSecondDigit = leftText[1] && leftText[1] !== "0" ? 1 : 0;
+          const rightHasUsefulSecondDigit = rightText[1] && rightText[1] !== "0" ? 1 : 0;
+
+          if (rightHasUsefulSecondDigit !== leftHasUsefulSecondDigit) {
+            return rightHasUsefulSecondDigit - leftHasUsefulSecondDigit;
+          }
+
+          // For promoted 8-digit prefixes, the larger prefix is usually closer
+          // to the real 100M-range value than a low 10x false read.
+          if (right.value !== left.value) {
+            return right.value - left.value;
+          }
+
+          const scoreDiff = scoreWithRank(right) - scoreWithRank(left);
+          if (scoreDiff !== 0) return scoreDiff;
+          return right.hits - left.hits;
+        });
+
+      const promoted = eightDigitCandidates.slice(0, 3).map((pick, index) => ({
+        ...pick,
+        label: `${pick.label}+prefix-repair`,
+        value: pick.value * 10,
+        score: scoreWithRank(pick) + 760 - index * 28,
+        hits: pick.hits + 2,
+        rank: 1,
+      }));
+
+      if (promoted.length) {
+        targetPicks = [...targetPicks, ...promoted];
+      }
+    }
+  }
+
   const byValue = new Map<number, NumericStagePick[]>();
 
-  for (const pick of picks) {
+  for (const pick of targetPicks) {
     const current = byValue.get(pick.value) ?? [];
     current.push(pick);
     byValue.set(pick.value, current);
   }
 
-  let bestConsensus: NumericStagePick[] | null = null;
+  const merged: NumericStagePick[] = [...byValue.entries()].map(
+    ([value, valuePicks]) => {
+      const best = [...valuePicks].sort((left, right) => {
+        const scoreDiff = scoreWithRank(right) - scoreWithRank(left);
+        if (scoreDiff !== 0) return scoreDiff;
+        if (right.hits !== left.hits) return right.hits - left.hits;
+        return right.value - left.value;
+      })[0];
 
-  for (const group of byValue.values()) {
-    if (group.length < 2) {
-      continue;
+      const consensusBonus =
+        (valuePicks.length - 1) * 90 +
+        valuePicks.reduce((sum, pick) => sum + Math.min(6, pick.hits), 0) * 4;
+
+      return {
+        ...best,
+        value,
+        score: scoreWithRank(best) + consensusBonus,
+        hits: valuePicks.reduce((sum, pick) => sum + pick.hits, 0),
+      };
     }
+  );
 
-    const sorted = [...group].sort((a, b) => b.score - a.score);
+  merged.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    if (right.hits !== left.hits) return right.hits - left.hits;
+    return right.value - left.value;
+  });
 
-    if (!bestConsensus) {
-      bestConsensus = sorted;
-      continue;
-    }
-
-    if (sorted.length > bestConsensus.length) {
-      bestConsensus = sorted;
-      continue;
-    }
-
-    if (
-      sorted.length === bestConsensus.length &&
-      sorted[0].score > bestConsensus[0].score
-    ) {
-      bestConsensus = sorted;
-    }
-  }
-
-  if (bestConsensus) {
-    const consensusBest = bestConsensus[0];
-    const consensusValue = String(consensusBest.value);
-
-    if (consensusValue.length === 8) {
-      const nineDigitParent = picks
-        .filter((pick) => String(pick.value).length === 9)
-        .filter((pick) => {
-          const nine = String(pick.value);
-          const isParent =
-            nine.slice(1) === consensusValue || nine.slice(0, 8) === consensusValue;
-
-          if (!isParent) {
-            return false;
-          }
-
-          if (pick.label !== "top-58%") {
-            return true;
-          }
-
-          return nine.startsWith(consensusValue);
-        })
-        .sort((left, right) => {
-          if (right.score !== left.score) {
-            return right.score - left.score;
-          }
-
-          if (right.hits !== left.hits) {
-            return right.hits - left.hits;
-          }
-
-          return getStageBias(right.label) - getStageBias(left.label);
-        })[0];
-
-      if (nineDigitParent) {
-        const parentValue = String(nineDigitParent.value);
-        const isPrefixParent = parentValue.startsWith(consensusValue);
-
-        const comparableScore = nineDigitParent.score >= consensusBest.score * (isPrefixParent ? 0.86 : 0.97);
-        const comparableHits = nineDigitParent.hits >= Math.max(1, consensusBest.hits - (isPrefixParent ? 3 : 1));
-
-        if (comparableScore && comparableHits) {
-          return nineDigitParent;
-        }
-      }
-    }
-
-    return consensusBest;
-  }
-
-  let best = picks[0];
-  let bestComposite = best.score + getStageBias(best.label);
-
-  for (const pick of picks.slice(1)) {
-    const composite = pick.score + getStageBias(pick.label);
-
-    if (composite > bestComposite) {
-      best = pick;
-      bestComposite = composite;
-      continue;
-    }
-
-    if (composite === bestComposite) {
-      if (pick.hits > best.hits) {
-        best = pick;
-        bestComposite = composite;
-        continue;
-      }
-
-      if (pick.hits === best.hits && pick.score > best.score) {
-        best = pick;
-        bestComposite = composite;
-      }
-    }
-  }
-
-  return best;
+  return merged[0] ?? null;
 }
 
 async function evaluateNumberStage(
@@ -2229,6 +2347,7 @@ async function evaluateNumberStage(
   mode: NumberReadMode = "full"
 ): Promise<{
   pick: NumericStagePick | null;
+  picks: NumericStagePick[];
   candidateLines: string[];
 }> {
   const stageCrop = cropTopPortion(crop, stage.height);
@@ -2269,21 +2388,26 @@ const needsPsm6Rescue =
   if (!groups.length) {
     return {
       pick: null,
+      picks: [],
       candidateLines: [`[${stage.label}] picked=0`, "  No valid numeric candidates"],
     };
   }
 
-  const best = groups[0];
+  const stagePicks: NumericStagePick[] = groups.slice(0, 8).map((group, index) => ({
+    label: stage.label,
+    value: Number(group.value),
+    score: group.score,
+    hits: group.hits,
+    rank: index + 1,
+  }));
+
+  const best = stagePicks[0];
 
   return {
-    pick: {
-      label: stage.label,
-      value: Number(best.value),
-      score: best.score,
-      hits: best.hits,
-    },
+    pick: best ?? null,
+    picks: stagePicks,
     candidateLines: [
-      `[${stage.label}] picked=${best.value}`,
+      `[${stage.label}] picked=${best?.value ?? 0}`,
       ...buildNumericCandidateLines(groups).map((line) => `  ${line}`),
     ],
   };
@@ -2298,9 +2422,7 @@ async function readBestNumberFromRow(
   for (const stage of getNumberReadStages(mode)) {
     const result = await evaluateNumberStage(crop, stage, mode);
 
-    if (result.pick) {
-      picks.push(result.pick);
-    }
+    picks.push(...result.picks);
   }
 
   const best = chooseBestStagePick(picks);
@@ -2317,9 +2439,7 @@ async function readBestNumberFromRowDebug(
     const result = await evaluateNumberStage(crop, stage, "full");
     debugLines.push(...result.candidateLines);
 
-    if (result.pick) {
-      picks.push(result.pick);
-    }
+    picks.push(...result.picks);
   }
 
   const best = chooseBestStagePick(picks);
