@@ -1,10 +1,25 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { Language } from "./types";
-import GvgSimulatorApp from "./features/gvg/GvgSimulatorApp";
 import HomeScreen from "./features/home/HomeScreen";
-import EnemyTribeAnalysisScreen from "./features/enemy-analysis/EnemyTribeAnalysisScreen";
+
+const GvgSimulatorApp = lazy(() => import("./features/gvg/GvgSimulatorApp"));
+const EnemyTribeAnalysisScreen = lazy(
+  () => import("./features/enemy-analysis/EnemyTribeAnalysisScreen")
+);
 
 type AppView = "home" | "gvg" | "enemy";
+
+function LoadingScreen() {
+  return (
+    <main className="app-shell">
+      <div className="app-container">
+        <div className="card">
+          <p className="muted">A carregar...</p>
+        </div>
+      </div>
+    </main>
+  );
+}
 
 export default function App() {
   const [view, setView] = useState<AppView>("home");
@@ -12,29 +27,39 @@ export default function App() {
 
   if (view === "gvg") {
     return (
-      <GvgSimulatorApp
-        language={language}
-        onReturnHome={() => setView("home")}
-      />
+      <Suspense fallback={<LoadingScreen />}>
+        <GvgSimulatorApp
+          language={language}
+          onReturnHome={() => setView("home")}
+        />
+      </Suspense>
+    );
+  }
+
+  if (view === "enemy") {
+    return (
+      <main className="app-shell">
+        <div className="app-container">
+          <Suspense fallback={<LoadingScreen />}>
+            <EnemyTribeAnalysisScreen
+              onBack={() => setView("home")}
+              language={language}
+            />
+          </Suspense>
+        </div>
+      </main>
     );
   }
 
   return (
     <main className="app-shell">
       <div className="app-container">
-        {view === "home" ? (
-          <HomeScreen
-            language={language}
-            onLanguageChange={setLanguage}
-            onOpenGvg={() => setView("gvg")}
-            onOpenEnemyAnalysis={() => setView("enemy")}
-          />
-        ) : (
-          <EnemyTribeAnalysisScreen
-            onBack={() => setView("home")}
-            language={language}
-          />
-        )}
+        <HomeScreen
+          language={language}
+          onLanguageChange={setLanguage}
+          onOpenGvg={() => setView("gvg")}
+          onOpenEnemyAnalysis={() => setView("enemy")}
+        />
       </div>
     </main>
   );

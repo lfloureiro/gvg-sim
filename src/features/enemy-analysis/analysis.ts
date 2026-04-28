@@ -208,6 +208,136 @@ export type DebugAnalysisResult = {
 };
 
 const OCR_LANGUAGE = "eng";
+const OCR_BACKEND_FULL_SCREENSHOT_URL =
+  "http://127.0.0.1:8090/ocr/might/full-screenshot";
+const OCR_BACKEND_TIMEOUT_MS = 120000;
+
+type BackendFullScreenshotOcr = {
+  chiefName: string | null;
+  individualMight: number;
+  kills: number;
+};
+
+void [
+  shouldRetryChiefNameBatch,
+  extractChiefName,
+  extractMightPair,
+  extractMightPairDebug,
+];
+
+function parseBackendNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+  }
+
+  if (typeof value !== "string") {
+    return 0;
+  }
+
+  const normalized = value.replace(/\D/g, "");
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseBackendName(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().replace(/\s+/g, " ");
+
+  if (!normalized || normalized.toLowerCase() === "unknown") {
+    return null;
+  }
+
+  return normalized;
+}
+
+async function canvasToPngFile(
+  canvas: HTMLCanvasElement,
+  fileName: string
+): Promise<File> {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((value) => {
+      if (!value) {
+        reject(new Error("Could not convert canvas to PNG."));
+        return;
+      }
+
+      resolve(value);
+    }, "image/png");
+  });
+
+  const safeName = fileName.replace(/\.[^.]+$/, "");
+
+  return new File([blob], `${safeName}.ocr-panel.png`, {
+    type: "image/png",
+  });
+}
+
+async function readFullScreenshotMightFromBackend(
+  file: File
+): Promise<BackendFullScreenshotOcr | null> {
+  if (typeof fetch !== "function") {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, OCR_BACKEND_TIMEOUT_MS);
+
+  try {
+    const body = new FormData();
+    body.append("file", file, file.name);
+
+    const response = await fetch(OCR_BACKEND_FULL_SCREENSHOT_URL, {
+      method: "POST",
+      body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    return {
+      chiefName:
+        parseBackendName(payload.chiefName) ??
+        parseBackendName(payload.name) ??
+        parseBackendName(payload.chief_name),
+      individualMight:
+        parseBackendNumber(payload.individualMight) ||
+        parseBackendNumber(payload.individual_might) ||
+        parseBackendNumber(payload.might) ||
+        parseBackendNumber(payload.value),
+      kills:
+        parseBackendNumber(payload.kills) ||
+        parseBackendNumber(payload.killCount) ||
+        parseBackendNumber(payload.kill_count),
+    };
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function getBackendDebugLines(backendOcr: BackendFullScreenshotOcr | null): string[] {
+  if (!backendOcr) {
+    return ["Backend OCR: unavailable"];
+  }
+
+  return [
+    `Backend OCR name: ${backendOcr.chiefName ?? "not found"}`,
+    `Backend OCR individual might: ${formatNumber(backendOcr.individualMight)}`,
+    `Backend OCR kills: ${formatNumber(backendOcr.kills)}`,
+  ];
+}
+
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -581,89 +711,15 @@ export async function analyzeEnemyImages(
           current: index + 1,
           total: files.length,
           fileName: file.name,
-          step: "Reading chief name",
+          step: "Reading backend OCR",
         });
 
-        let chiefName = await extractChiefName(
-          analysisCanvas,
-          layout.topInfoRect,
-          layout.nameRect,
-          mode !== "accurate"
-        );
+        const backendFile = await canvasToPngFile(analysisCanvas, file.name);
+        const backendOcr = await readFullScreenshotMightFromBackend(backendFile);
 
-        const shouldRetryName =
-          mode === "accurate"
-            ? shouldRetryChiefNameBatch(chiefName)
-            : mode === "balanced"
-              ? chiefName === "Unknown"
-              : false;
-
-        let currentLayout = layout;
-
-        if (shouldRetryName) {
-          currentLayout = await detectLayout(analysisCanvas);
-          const retriedChiefName = await extractChiefName(
-            analysisCanvas,
-            currentLayout.topInfoRect,
-            currentLayout.nameRect,
-            false
-          );
-
-          if (retriedChiefName !== "Unknown") {
-            chiefName = retriedChiefName;
-          }
-        }
-
-        onProgress?.({
-          current: index + 1,
-          total: files.length,
-          fileName: file.name,
-          step: "Reading might values",
-        });
-
-        const initialMightMode: NumberReadMode =
-          mode === "accurate" ? "full" : "fast";
-
-        let { individualMight, heroMight } = await extractMightPair(
-          analysisCanvas,
-          currentLayout.topInfoRect,
-          initialMightMode
-        );
-
-        const shouldRetryMight =
-          mode === "accurate"
-            ? chiefName === "Unknown" || individualMight === 0
-            : mode === "balanced"
-              ? chiefName === "Unknown" || individualMight === 0
-              : false;
-
-        if (shouldRetryMight) {
-          if (currentLayout === layout) {
-            currentLayout = await detectLayout(analysisCanvas);
-          }
-
-          const retryName = await extractChiefName(
-            analysisCanvas,
-            currentLayout.topInfoRect,
-            currentLayout.nameRect,
-            false
-          );
-
-          const retryMight = await extractMightPair(
-            analysisCanvas,
-            currentLayout.topInfoRect,
-            mode === "accurate" ? "full_with_psm6" : "full"
-          );
-
-          if (retryName !== "Unknown") {
-            chiefName = retryName;
-          }
-
-          if (retryMight.individualMight >= individualMight) {
-            individualMight = retryMight.individualMight;
-            heroMight = retryMight.heroMight;
-          }
-        }
+        const chiefName = backendOcr?.chiefName ?? "Unknown";
+        const individualMight = backendOcr?.individualMight ?? 0;
+        const heroMight = backendOcr?.kills ?? 0;
 
         onProgress?.({
           current: index + 1,
@@ -672,7 +728,7 @@ export async function analyzeEnemyImages(
           step: "Analyzing artifacts",
         });
 
-        const slots = analyzeSlots(analysisCanvas, currentLayout);
+        const slots = analyzeSlots(analysisCanvas, layout);
 
         const armyScores = buildArmyScores(slots);
         const armyType = decideArmyType(armyScores, slots);
@@ -715,19 +771,17 @@ export async function analyzeEnemyImageDebug(
     const layoutMs = nowMs() - layoutStart;
 
     const nameStart = nowMs();
-    const chiefName = await extractChiefName(
-      analysisCanvas,
-      layout.topInfoRect,
-      layout.nameRect
-    );
+    const backendFile = await canvasToPngFile(analysisCanvas, file.name);
+    const backendOcr = await readFullScreenshotMightFromBackend(backendFile);
     const nameMs = nowMs() - nameStart;
 
+    const chiefName = backendOcr?.chiefName ?? "Unknown";
+    const individualMight = backendOcr?.individualMight ?? 0;
+    const heroMight = backendOcr?.kills ?? 0;
+
     const mightStart = nowMs();
-    const mightDebug = await extractMightPairDebug(
-      analysisCanvas,
-      layout.topInfoRect
-    );
     const mightMs = nowMs() - mightStart;
+    const backendDebugLines = getBackendDebugLines(backendOcr);
 
     const artifactsStart = nowMs();
     const slots = analyzeSlots(analysisCanvas, layout);
@@ -741,9 +795,9 @@ export async function analyzeEnemyImageDebug(
       analysisCanvas,
       layout,
       chiefName,
-      mightDebug.individualMight,
+      individualMight,
       slots,
-      mightDebug.candidateLines
+      backendDebugLines
     );
     const cropsMs = nowMs() - cropsStart;
 
@@ -756,12 +810,12 @@ export async function analyzeEnemyImageDebug(
       imageHeight: analysisCanvas.height,
       layout,
       chiefName,
-      individualMight: mightDebug.individualMight,
-      heroMight: mightDebug.heroMight,
+      individualMight,
+      heroMight,
       armyType,
       confidence,
       slots,
-      mightDebugLines: mightDebug.candidateLines,
+      mightDebugLines: backendDebugLines,
       crops,
       timings: {
         totalMs,

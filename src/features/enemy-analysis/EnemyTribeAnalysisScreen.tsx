@@ -497,20 +497,20 @@ export default function EnemyTribeAnalysisScreen({
 
   return (
     <div className="stack">
-      <div className="app-top-actions">
+      <div className="app-top-actions" style={{ flexWrap: "wrap" }}>
         <button className="secondary-button" onClick={onBack}>
           ← {t.common.back}
         </button>
 
+        <button
+          className="secondary-button"
+          onClick={() => setShowAdvanced((value) => !value)}
+        >
+          {showAdvanced ? "Hide debug panel" : "Open debug mode"}
+        </button>
+
         {rows.length ? (
           <>
-            <button
-              className="secondary-button"
-              onClick={() => setShowAdvanced((value) => !value)}
-            >
-              {showAdvanced ? "Hide debug panel" : "Show debug panel"}
-            </button>
-
             <button
               className="primary-button"
               onClick={() =>
@@ -648,6 +648,10 @@ export default function EnemyTribeAnalysisScreen({
           <div className="note-box">{statusMessage}</div>
         ) : null}
       </section>
+
+      {showAdvanced && !rows.length ? (
+        <EnemyTribeDebugScreen language={language} />
+      ) : null}
 
       {rows.length ? (
         <>
