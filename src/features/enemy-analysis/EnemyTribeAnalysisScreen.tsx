@@ -126,10 +126,9 @@ export default function EnemyTribeAnalysisScreen({
   const [statusMessage, setStatusMessage] = useState("");
   const [learningRefreshKey, setLearningRefreshKey] = useState(0);
   const [selectedFolderLabel, setSelectedFolderLabel] = useState("");
-  const [fallbackPickerKey] = useState(0);
+  const [fallbackPickerKey, setFallbackPickerKey] = useState(0);
   const [correctionsPickerKey, setCorrectionsPickerKey] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const fallbackFileRef = useRef<HTMLInputElement | null>(null);
   const correctionsFileRef = useRef<HTMLInputElement | null>(null);
 
   const supportsDirectoryPicker =
@@ -221,7 +220,7 @@ export default function EnemyTribeAnalysisScreen({
 
   async function handleChooseFolder() {
     if (!supportsDirectoryPicker) {
-      fallbackFileRef.current?.click();
+      setFallbackPickerKey((value) => value + 1);
       return;
     }
 
@@ -503,15 +502,15 @@ export default function EnemyTribeAnalysisScreen({
           ← {t.common.back}
         </button>
 
-        <button
-          className="secondary-button"
-          onClick={() => setShowAdvanced((value) => !value)}
-        >
-          {showAdvanced ? "Hide debug panel" : "Show debug panel"}
-        </button>
-
         {rows.length ? (
           <>
+            <button
+              className="secondary-button"
+              onClick={() => setShowAdvanced((value) => !value)}
+            >
+              {showAdvanced ? "Hide debug panel" : "Show debug panel"}
+            </button>
+
             <button
               className="primary-button"
               onClick={() =>
@@ -610,23 +609,23 @@ export default function EnemyTribeAnalysisScreen({
             </button>
 
             {!supportsDirectoryPicker ? (
-              <input
-                key={fallbackPickerKey}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleFallbackFolderChange}
-                ref={(input) => {
-                  fallbackFileRef.current = input;
-                  if (input) {
-                    input.setAttribute("webkitdirectory", "");
-                    input.setAttribute("directory", "");
-                  }
-                }}
-                style={{ display: "none" }}
-                tabIndex={-1}
-                aria-hidden="true"
-              />
+              <label className="folder-picker-fallback">
+                <input
+                  key={fallbackPickerKey}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFallbackFolderChange}
+                  ref={(input) => {
+                    if (input) {
+                      input.setAttribute("webkitdirectory", "");
+                      input.setAttribute("directory", "");
+                    }
+                  }}
+                />
+                <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
+                <small>{t.enemyAnalysis.chooseFolderHelp}</small>
+              </label>
             ) : null}
           </div>
         </div>
@@ -649,25 +648,6 @@ export default function EnemyTribeAnalysisScreen({
           <div className="note-box">{statusMessage}</div>
         ) : null}
       </section>
-
-      {showAdvanced && !rows.length ? (
-        <>
-          <section className="card">
-            <div className="card-header">
-              <div>
-                <p className="eyebrow">Debug</p>
-                <h2>Debug panel</h2>
-                <p className="muted">
-                  Use this panel to analyse a single screenshot, inspect the crops
-                  and verify what the OCR is reading before scanning a full folder.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <EnemyTribeDebugScreen language={language} />
-        </>
-      ) : null}
 
       {rows.length ? (
         <>
