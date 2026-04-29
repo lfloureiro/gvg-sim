@@ -61,20 +61,13 @@ class OcrEngine:
         self.name_boxes: List[OcrBox] = [
             OcrBox("name_tight", (0.115, 0.047, 0.670, 0.121)),
             OcrBox("name_wide", (0.075, 0.036, 0.737, 0.137)),
-            OcrBox("name_lower", (0.095, 0.063, 0.707, 0.157)),
         ]
 
         self.number_boxes: List[OcrBox] = [
-            OcrBox("individual_top_very_tight", (0.344, 0.131, 0.766, 0.194)),
             OcrBox("individual_top_tight", (0.324, 0.126, 0.787, 0.205)),
             OcrBox("individual_top_wide", (0.286, 0.121, 0.806, 0.216)),
-            OcrBox("individual_mid_tight", (0.344, 0.142, 0.766, 0.226)),
-            OcrBox("individual_mid_wide", (0.286, 0.137, 0.806, 0.236)),
             OcrBox("kills_top_tight", (0.344, 0.216, 0.766, 0.284)),
             OcrBox("kills_top_wide", (0.286, 0.204, 0.806, 0.299)),
-            OcrBox("kills_mid_tight", (0.344, 0.225, 0.766, 0.315)),
-            OcrBox("kills_mid_wide", (0.286, 0.216, 0.806, 0.331)),
-            OcrBox("top_info_number_area", (0.267, 0.109, 0.826, 0.331)),
         ]
 
     # ------------------------------------------------------------------
