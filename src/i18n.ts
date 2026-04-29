@@ -9,6 +9,7 @@ import de from "./locales/de";
 import fr from "./locales/fr";
 import uk from "./locales/uk";
 import zhTW from "./locales/zh-TW";
+import ar from "./locales/ar";
 
 export const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
   { value: "en", label: "English" },
@@ -20,6 +21,7 @@ export const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
   { value: "fr", label: "Français" },
   { value: "uk", label: "Українська" },
   { value: "zhTW", label: "中文（繁體）" },
+  { value: "ar", label: "العربية" },
 ];
 
 const translations: TranslationMap = {
@@ -32,6 +34,7 @@ const translations: TranslationMap = {
   fr,
   uk,
   zhTW,
+  ar,
 };
 
 export type { AppText };
