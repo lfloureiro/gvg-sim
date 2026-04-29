@@ -1,0 +1,163 @@
+import type { AppText } from "./schema";
+
+const zhTW: AppText = {
+  common: {
+    language: "語言",
+    version: "版本",
+    backToHome: "返回首頁",
+    reset: "重設",
+    switchToTableMode: "切換至表格模式",
+    switchToVisualMode: "切換至視覺模式",
+    tribes: "部落",
+    visualTribesHelp: "沒有指定部落的據點會淡化顯示。Order 選擇器已準備好供下一階段使用。",
+    noTribe: "- 無部落 -",
+    back: "返回",
+    continue: "繼續",
+    copyCurrentToSimulation: "複製目前狀態到模擬",
+    currentDay: "目前日數",
+    currentGmtTime: "目前 GMT 時間",
+    minutesRemainingToTheEnd: "距離結束尚餘分鐘",
+    currentPoints: "目前分數",
+    firstCapture: "首次佔領",
+    pointsPerMinute: "每分鐘分數",
+    finalIfUnchanged: "若保持不變的最終分數",
+    finalSimulated: "模擬最終分數",
+    difference: "差距",
+    tribe: "部落",
+    ruin: "遺跡",
+    currentOwner: "目前擁有者",
+    simulateIfChangedNow: "若現在改變則模擬",
+    day1: "第 1 天",
+    day2: "第 2 天",
+    day3: "第 3 天",
+    colour: "顏色",
+    colours: {
+      red: "紅色",
+      blue: "藍色",
+      green: "綠色",
+      yellow: "黃色",
+      purple: "紫色",
+      orange: "橙色",
+      pink: "粉紅色",
+      mint: "薄荷色",
+    },
+  },
+  setup: {
+    title: "GvG 分數模擬器",
+    subtitle:
+      "部落 1 永遠是 MF69。請為其他部落選擇名稱、顏色和目前分數。",
+    initialTribeData: "初始部落資料",
+    tribeName: "部落名稱",
+  },
+  simulation: {
+    title: "GvG 第 3 天結束預測",
+    subtitle: "目前狀態與若現在發生變更後的模擬狀態比較。",
+    eyebrow: "遺跡與最終預測",
+    day3Finish: "第 3 天結束",
+    howToRead: "如何閱讀最終表格：",
+    noteLine1:
+      "首次佔領分數 = 在首次佔領欄中選擇、但尚未加入目前分數的獎勵。",
+    noteLine2:
+      "每分鐘分數 = 各部落根據目前模擬擁有權正在獲得的每分鐘分數。",
+    noteLine3:
+      "模擬最終分數 = 目前分數 + 待加入的首次佔領獎勵 + 到第 3 天結束前的未來產出。",
+    bastions: "堡壘",
+    valkyries: "女武神",
+    temple: "神殿",
+    finalSummary: "最終摘要",
+    simulatedScoreEvolution: "模擬分數變化",
+    simulatedScoreEvolutionSubtitle:
+      "根據模擬擁有權，從現在到第 3 天結束的分數增長。",
+  },
+  home: {
+    title: "MF69 工具箱",
+    subtitle: "選擇一個工具，並在整個應用程式中保持相同語言。",
+    gvgEyebrow: "GvG",
+    gvgTitle: "GvG 分數模擬器",
+    gvgDescription:
+      "設定部落、目前分數和遺跡擁有權，然後預測每日結束結果。",
+    gvgButton: "開啟 GvG",
+    enemyEyebrow: "分析",
+    enemyTitle: "敵方部落分析",
+    enemyDescription:
+      "掃描螢幕截圖，偵測主要兵種，並按戰力排序敵方首領。",
+    enemyButton: "開啟分析",
+  },
+  enemyAnalysis: {
+    title: "掃描 Fate War 螢幕截圖資料夾",
+    subtitle:
+      "分析器會讀取首領名稱、兩個戰力數值，以及關鍵神器欄位。",
+    inputEyebrow: "輸入",
+    inputTitle: "資料夾選擇與排序模式",
+    inputSubtitle:
+      "請選擇包含同一遊戲頁面螢幕截圖的資料夾。",
+    screenshotFolder: "螢幕截圖資料夾",
+    chooseFolder: "點擊此處選擇螢幕截圖資料夾",
+    chooseFolderHelp:
+      "選擇包含要分析的 Fate War 螢幕截圖的資料夾。應用程式只會讀取檔案。",
+    selectedFolder: "已選擇資料夾",
+    noFolderSelected: "尚未選擇資料夾",
+    orderBy: "敵人排序依據",
+    artifactNote:
+      "神器等級只根據顏色判定：灰 0、綠 1、藍 2、紫 3、金 4、紅 5。符文顏色只用作同分判定。",
+    analyzing: "分析中",
+    step: "步驟",
+    screenshotsAnalyzed: "已分析螢幕截圖",
+    archers: "弓兵",
+    berserkers: "狂戰士",
+    cavalry: "騎兵",
+    results: "結果",
+    chiefsClassified: "名首領被分類為",
+    noChiefsClassified: "沒有首領被分類為",
+    name: "名稱",
+    individualMight: "個人戰力",
+    heroMight: "英雄戰力",
+    primaryBuild: "主要配置",
+    confidence: "可信度",
+    openFolderError: "無法開啟所選資料夾。",
+    high: "高",
+    medium: "中",
+    low: "低",
+  },
+  errors: {
+    allTribesMustHaveAName: "所有部落都必須有名稱。",
+    tribeNamesMustBeUnique: "部落名稱不可重複。",
+  },
+  modeSelection: {
+    eyebrow: "GvG 模擬器",
+    title: "選擇模式",
+    subtitle: "選擇要使用表格模式還是視覺模式。",
+    tableTitle: "表格模式",
+    tableDescription: "目前流程：使用列表設定，並以表格方式進行模擬。",
+    visualTitle: "視覺模式",
+    visualDescription: "新流程：使用地圖選擇位置，並進行視覺化模擬。",
+  },
+
+  setupVisual: {
+    title: "視覺設定",
+    subtitle: "在此模式中，顏色不會手動選擇，而是根據地圖上所選位置自動推算。",
+    nextStepTitle: "下一步：",
+    nextStepBody: "我們會將此設定頁替換為地圖模式，讓你直接把每個部落分配到據點位置。",
+    backToModes: "返回模式選擇",
+  },
+
+  simulationVisual: {
+    eyebrow: "視覺模式",
+    title: "視覺模擬",
+    subtitle: "基礎結構已準備好。下一步會把視覺設定連接到地圖，再連接到遺跡/通道擁有權。",
+    calibrationOn: "校準",
+    calibrationOff: "退出校準",
+    nextStepTitle: "下一步",
+    nextStepBodyLine1: "我們會將此佔位內容替換為：",
+    nextStepBodyLine2: "1. 使用據點位置分配部落的視覺設定\n2. 顯示遺跡、通道和擁有者覆蓋層的視覺模擬",
+  },
+
+  mapCalibration: {
+    pointLabel: "點位",
+    copyCoordinates: "複製座標",
+    reset: "重設",
+    help: "點擊一個點位以選擇。使用方向鍵每次移動 0.2%。按住 Shift + 方向鍵每次移動 1%。",
+  },
+};
+
+export default zhTW;
