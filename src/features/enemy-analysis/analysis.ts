@@ -217,6 +217,163 @@ function nowMs() {
   return Date.now();
 }
 
+
+const OCR_BACKEND_FULL_SCREENSHOT_URL = "/ocr/might/full-screenshot";
+const OCR_BACKEND_TIMEOUT_MS = 120_000;
+
+type BackendOcrResult = {
+  chiefName?: string | null;
+  individualMight?: number | null;
+  kills?: number | null;
+  raw_text?: string;
+  candidates?: string[];
+  candidateDetails?: Array<{
+    value?: string | number;
+    source?: string;
+    length?: number;
+    confidence?: number;
+    text?: string;
+    label?: string;
+  }>;
+  nameAttempts?: Array<{
+    label?: string;
+    value?: string | null;
+    raw_text?: string;
+  }>;
+  attempts?: Array<{
+    label?: string;
+    value?: string | number | null;
+    formatted?: string | null;
+    raw_text?: string;
+    candidates?: string[];
+  }>;
+};
+
+function normalizeBackendNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+  }
+
+  if (typeof value !== "string") {
+    return 0;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (!digits) {
+    return 0;
+  }
+
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+}
+
+function normalizeBackendName(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const cleaned = value.trim().replace(/\s+/g, " ");
+  if (!cleaned || cleaned.toLowerCase() === "unknown") {
+    return null;
+  }
+
+  return cleaned;
+}
+
+async function canvasToPngFile(canvas: HTMLCanvasElement, fileName: string): Promise<File> {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((createdBlob) => {
+      if (!createdBlob) {
+        reject(new Error("Could not convert canvas to PNG."));
+        return;
+      }
+
+      resolve(createdBlob);
+    }, "image/png");
+  });
+
+  const baseName = fileName.replace(/\.[^.]+$/, "");
+  return new File([blob], `${baseName}.ocr-panel.png`, { type: "image/png" });
+}
+
+async function readFullScreenshotMightFromBackend(file: File): Promise<BackendOcrResult | null> {
+  if (typeof fetch !== "function") {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), OCR_BACKEND_TIMEOUT_MS);
+
+  try {
+    const body = new FormData();
+    body.append("file", file, file.name);
+
+    const response = await fetch(OCR_BACKEND_FULL_SCREENSHOT_URL, {
+      method: "POST",
+      body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+
+    return {
+      ...data,
+      chiefName:
+        normalizeBackendName(data.chiefName) ??
+        normalizeBackendName(data.name) ??
+        normalizeBackendName(data.chief_name),
+      individualMight:
+        normalizeBackendNumber(data.individualMight) ||
+        normalizeBackendNumber(data.individual_might) ||
+        normalizeBackendNumber(data.might) ||
+        normalizeBackendNumber(data.value),
+      kills:
+        normalizeBackendNumber(data.kills) ||
+        normalizeBackendNumber(data.killCount) ||
+        normalizeBackendNumber(data.kill_count),
+    } as BackendOcrResult;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function getBackendDebugLines(result: BackendOcrResult | null): string[] {
+  if (!result) {
+    return ["Backend OCR: unavailable"];
+  }
+
+  const lines = [
+    `Backend OCR name: ${result.chiefName ?? "not found"}`,
+    `Backend OCR individual might: ${formatNumber(result.individualMight ?? 0)}`,
+    `Backend OCR kills: ${formatNumber(result.kills ?? 0)}`,
+  ];
+
+  if (Array.isArray(result.nameAttempts) && result.nameAttempts.length > 0) {
+    lines.push("Name attempts:");
+    for (const attempt of result.nameAttempts.slice(0, 4)) {
+      lines.push(
+        `- ${attempt.label ?? "name"}: ${attempt.value ?? "not found"}` +
+          (attempt.raw_text ? ` | ${attempt.raw_text.replace(/\s+/g, " ").trim()}` : "")
+      );
+    }
+  }
+
+  if (Array.isArray(result.attempts) && result.attempts.length > 0) {
+    lines.push("Number attempts:");
+    for (const attempt of result.attempts.slice(0, 6)) {
+      const value = attempt.formatted ?? attempt.value ?? "not found";
+      lines.push(`- ${attempt.label ?? "number"}: ${value}`);
+    }
+  }
+
+  return lines;
+}
 type OcrWorker = Awaited<ReturnType<typeof Tesseract.createWorker>>;
 
 let ocrWorkerPromise: Promise<OcrWorker> | null = null;
@@ -5137,3 +5294,9 @@ function canvasToDataUrl(canvas: HTMLCanvasElement) {
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
+
+// Keep legacy OCR helpers available for fallback/debug without tripping noUnusedLocals.
+void shouldRetryChiefNameBatch;
+void extractChiefName;
+void extractMightPair;
+void extractMightPairDebug;
