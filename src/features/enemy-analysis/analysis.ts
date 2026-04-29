@@ -208,8 +208,7 @@ export type DebugAnalysisResult = {
 };
 
 const OCR_LANGUAGE = "eng";
-const OCR_BACKEND_FULL_SCREENSHOT_URL =
-  "http://127.0.0.1:8090/ocr/might/full-screenshot";
+const OCR_BACKEND_FULL_SCREENSHOT_URL = "/ocr/might/full-screenshot";
 const OCR_BACKEND_TIMEOUT_MS = 120000;
 
 type BackendFullScreenshotOcr = {
