@@ -503,15 +503,15 @@ export default function EnemyTribeAnalysisScreen({
           ← {t.common.back}
         </button>
 
+        <button
+          className="secondary-button"
+          onClick={() => setShowAdvanced((value) => !value)}
+        >
+          {showAdvanced ? "Hide debug mode" : "Open debug mode"}
+        </button>
+
         {rows.length ? (
           <>
-            <button
-              className="secondary-button"
-              onClick={() => setShowAdvanced((value) => !value)}
-            >
-              {showAdvanced ? "Hide debug panel" : "Show debug panel"}
-            </button>
-
             <button
               className="primary-button"
               onClick={() =>
@@ -679,6 +679,10 @@ export default function EnemyTribeAnalysisScreen({
           </aside>
         </div>
       </section>
+
+      {showAdvanced && !rows.length ? (
+        <EnemyTribeDebugScreen language={language} />
+      ) : null}
 
       {rows.length ? (
         <>
@@ -1589,16 +1593,16 @@ function fallbackCopyText(text: string) {
 
 const analysisInputGridStyle = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 430px)",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 360px)",
   gap: 20,
-  alignItems: "stretch",
+  alignItems: "start",
 } satisfies CSSProperties;
 
 const exampleScreenshotCardStyle = {
   display: "grid",
-  gap: 14,
+  gap: 12,
   alignContent: "start",
-  padding: 18,
+  padding: 16,
   borderRadius: 18,
   border: "1px solid rgba(96, 165, 250, 0.22)",
   background:
@@ -1627,12 +1631,14 @@ const exampleScreenshotSubtitleStyle = {
 
 const exampleScreenshotImageStyle = {
   width: "100%",
-  maxHeight: 470,
+  maxHeight: 320,
   objectFit: "contain",
+  objectPosition: "top center",
   borderRadius: 12,
   border: "1px solid rgba(125, 211, 252, 0.32)",
   background: "rgba(15, 23, 42, 0.72)",
-  boxShadow: "0 18px 45px rgba(0,0,0,0.28)",
+  boxShadow: "0 12px 28px rgba(0,0,0,0.22)",
+  alignSelf: "start",
 } satisfies CSSProperties;
 
 const exampleScreenshotHintStyle = {
