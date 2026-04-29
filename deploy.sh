@@ -57,7 +57,21 @@ systemctl enable gvg-ocr
 systemctl restart gvg-ocr
 
 echo "==> Waiting for OCR backend"
-sleep 2
+for i in {1..30}; do
+  if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then
+    echo "OCR backend is ready"
+    break
+  fi
+
+  if [ "$i" -eq 30 ]; then
+    echo "OCR backend did not become ready in time"
+    systemctl status gvg-ocr --no-pager || true
+    journalctl -u gvg-ocr -n 80 --no-pager || true
+    exit 1
+  fi
+
+  sleep 1
+done
 
 echo "==> Testing OCR backend directly"
 curl -fsS http://127.0.0.1:8090/health
