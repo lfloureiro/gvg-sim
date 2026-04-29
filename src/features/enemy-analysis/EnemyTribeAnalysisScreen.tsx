@@ -94,6 +94,7 @@ const ARTIFACT_COLORS: ArtifactColor[] = [
 ];
 
 const DEFAULT_ANALYSIS_MODE: AnalysisMode = "fast";
+const EXAMPLE_SCREENSHOT_SRC = "/enemy-analysis-example.png";
 
 type DiscordDestino = keyof typeof DISCORD_WEBHOOKS;
 type OverrideMap = Record<string, EnemyAnalysisRowOverride>;
@@ -497,20 +498,20 @@ export default function EnemyTribeAnalysisScreen({
 
   return (
     <div className="stack">
-      <div className="app-top-actions" style={{ flexWrap: "wrap" }}>
+      <div className="app-top-actions">
         <button className="secondary-button" onClick={onBack}>
           ← {t.common.back}
         </button>
 
-        <button
-          className="secondary-button"
-          onClick={() => setShowAdvanced((value) => !value)}
-        >
-          {showAdvanced ? "Hide debug panel" : "Open debug mode"}
-        </button>
-
         {rows.length ? (
           <>
+            <button
+              className="secondary-button"
+              onClick={() => setShowAdvanced((value) => !value)}
+            >
+              {showAdvanced ? "Hide debug panel" : "Show debug panel"}
+            </button>
+
             <button
               className="primary-button"
               onClick={() =>
@@ -576,82 +577,108 @@ export default function EnemyTribeAnalysisScreen({
       </section>
 
       <section className="card">
-        <div className="card-header">
+        <div style={analysisInputGridStyle}>
           <div>
-            <p className="eyebrow">{t.enemyAnalysis.inputEyebrow}</p>
-            <h2>{t.enemyAnalysis.inputTitle}</h2>
-            <p className="muted">{t.enemyAnalysis.inputSubtitle}</p>
-          </div>
-        </div>
+            <div className="card-header">
+              <div>
+                <p className="eyebrow">{t.enemyAnalysis.inputEyebrow}</p>
+                <h2>{t.enemyAnalysis.inputTitle}</h2>
+                <p className="muted">{t.enemyAnalysis.inputSubtitle}</p>
+              </div>
+            </div>
 
-        <div className="analysis-controls">
-          <div className="field">
-            <span>{t.enemyAnalysis.screenshotFolder}</span>
+            <div className="analysis-controls">
+              <div className="field">
+                <span>{t.enemyAnalysis.screenshotFolder}</span>
 
-            <button
-              className="folder-picker-button"
-              type="button"
-              onClick={handleChooseFolder}
-            >
-              <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
+                <button
+                  className="folder-picker-button"
+                  type="button"
+                  onClick={handleChooseFolder}
+                >
+                  <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
 
-              <small>{t.enemyAnalysis.chooseFolderHelp}</small>
+                  <small>{t.enemyAnalysis.chooseFolderHelp}</small>
 
-              {selectedFolderLabel ? (
-                <span className="folder-picker-selected">
-                  {t.enemyAnalysis.selectedFolder}: {selectedFolderLabel}
-                </span>
-              ) : (
-                <span className="folder-picker-selected">
-                  {t.enemyAnalysis.noFolderSelected}
-                </span>
-              )}
-            </button>
+                  {selectedFolderLabel ? (
+                    <span className="folder-picker-selected">
+                      {t.enemyAnalysis.selectedFolder}: {selectedFolderLabel}
+                    </span>
+                  ) : (
+                    <span className="folder-picker-selected">
+                      {t.enemyAnalysis.noFolderSelected}
+                    </span>
+                  )}
+                </button>
 
-            {!supportsDirectoryPicker ? (
-              <label className="folder-picker-fallback">
-                <input
-                  key={fallbackPickerKey}
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={handleFallbackFolderChange}
-                  ref={(input) => {
-                    if (input) {
-                      input.setAttribute("webkitdirectory", "");
-                      input.setAttribute("directory", "");
-                    }
-                  }}
-                />
-                <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
-                <small>{t.enemyAnalysis.chooseFolderHelp}</small>
-              </label>
+                {!supportsDirectoryPicker ? (
+                  <label className="folder-picker-fallback">
+                    <input
+                      key={fallbackPickerKey}
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleFallbackFolderChange}
+                      ref={(input) => {
+                        if (input) {
+                          input.setAttribute("webkitdirectory", "");
+                          input.setAttribute("directory", "");
+                        }
+                      }}
+                    />
+                    <strong>📁 {t.enemyAnalysis.chooseFolder}</strong>
+                    <small>{t.enemyAnalysis.chooseFolderHelp}</small>
+                  </label>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="note-box compact-note-box">
+              {t.enemyAnalysis.artifactNote}
+            </div>
+
+            {progress ? (
+              <div className="note-box">
+                {t.enemyAnalysis.analyzing} {progress.current}/{progress.total}:{" "}
+                <strong>{progress.fileName}</strong>
+                <br />
+                {t.enemyAnalysis.step}: {progress.step}
+              </div>
+            ) : null}
+
+            {error ? <div className="error-box">{error}</div> : null}
+            {statusMessage && !showAdvanced ? (
+              <div className="note-box">{statusMessage}</div>
             ) : null}
           </div>
+
+          <aside style={exampleScreenshotCardStyle}>
+            <div style={exampleScreenshotHeaderStyle}>
+              <span aria-hidden="true">🖼️</span>
+              <div>
+                <strong style={exampleScreenshotTitleStyle}>Example screenshot</strong>
+                <p style={exampleScreenshotSubtitleStyle}>
+                  Use full screenshots from the same in-game page.
+                </p>
+              </div>
+            </div>
+
+            <img
+              src={EXAMPLE_SCREENSHOT_SRC}
+              alt="Example Fate War screenshot with chief name, might values and artifact section"
+              style={exampleScreenshotImageStyle}
+            />
+
+            <div style={exampleScreenshotHintStyle}>
+              <span aria-hidden="true">💡</span>
+              <span>
+                Include the top area with <strong>ID</strong>, <strong>name</strong>,{" "}
+                <strong>might values</strong>, and the <strong>Chieftain's Artifact</strong> section.
+              </span>
+            </div>
+          </aside>
         </div>
-
-        <div className="note-box compact-note-box">
-          {t.enemyAnalysis.artifactNote}
-        </div>
-
-        {progress ? (
-          <div className="note-box">
-            {t.enemyAnalysis.analyzing} {progress.current}/{progress.total}:{" "}
-            <strong>{progress.fileName}</strong>
-            <br />
-            {t.enemyAnalysis.step}: {progress.step}
-          </div>
-        ) : null}
-
-        {error ? <div className="error-box">{error}</div> : null}
-        {statusMessage && !showAdvanced ? (
-          <div className="note-box">{statusMessage}</div>
-        ) : null}
       </section>
-
-      {showAdvanced && !rows.length ? (
-        <EnemyTribeDebugScreen language={language} />
-      ) : null}
 
       {rows.length ? (
         <>
@@ -1558,6 +1585,64 @@ function fallbackCopyText(text: string) {
   document.execCommand("copy");
   document.body.removeChild(textarea);
 }
+
+
+const analysisInputGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 430px)",
+  gap: 20,
+  alignItems: "stretch",
+} satisfies CSSProperties;
+
+const exampleScreenshotCardStyle = {
+  display: "grid",
+  gap: 14,
+  alignContent: "start",
+  padding: 18,
+  borderRadius: 18,
+  border: "1px solid rgba(96, 165, 250, 0.22)",
+  background:
+    "radial-gradient(circle at top left, rgba(30, 64, 175, 0.18), transparent 36%), rgba(2, 9, 25, 0.45)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+} satisfies CSSProperties;
+
+const exampleScreenshotHeaderStyle = {
+  display: "flex",
+  gap: 12,
+  alignItems: "flex-start",
+} satisfies CSSProperties;
+
+const exampleScreenshotTitleStyle = {
+  display: "block",
+  fontSize: 18,
+  lineHeight: 1.2,
+} satisfies CSSProperties;
+
+const exampleScreenshotSubtitleStyle = {
+  margin: "6px 0 0",
+  color: "rgba(226,232,240,0.72)",
+  fontSize: 14,
+  lineHeight: 1.35,
+} satisfies CSSProperties;
+
+const exampleScreenshotImageStyle = {
+  width: "100%",
+  maxHeight: 470,
+  objectFit: "contain",
+  borderRadius: 12,
+  border: "1px solid rgba(125, 211, 252, 0.32)",
+  background: "rgba(15, 23, 42, 0.72)",
+  boxShadow: "0 18px 45px rgba(0,0,0,0.28)",
+} satisfies CSSProperties;
+
+const exampleScreenshotHintStyle = {
+  display: "flex",
+  gap: 10,
+  alignItems: "flex-start",
+  color: "rgba(226,232,240,0.78)",
+  fontSize: 13,
+  lineHeight: 1.45,
+} satisfies CSSProperties;
 
 const textInputStyle = {
   width: "100%",
